@@ -54,13 +54,13 @@
 
 /* List of message types that this plugin understands */
 
-#define foreach_sample_plugin_api_msg                           \
-_(SAMPLE_MACSWAP_ENABLE_DISABLE, sample_macswap_enable_disable)
+#define foreach_ipfix_plugin_api_msg                           \
+_(IPFIX_MACSWAP_ENABLE_DISABLE, ipfix_macswap_enable_disable)
 
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
-    .version = SAMPLE_PLUGIN_BUILD_VER,
-    .description = "Sample of VPP Plugin",
+    .version = IPFIX_PLUGIN_BUILD_VER,
+    .description = "Ipfix of VPP Plugin",
 };
 /* *INDENT-ON* */
 
@@ -70,7 +70,7 @@ VLIB_PLUGIN_REGISTER () = {
  * Action function shared between message handler and debug CLI.
  */
 
-int sample_macswap_enable_disable (sample_main_t * sm, u32 sw_if_index,
+int ipfix_macswap_enable_disable (ipfix_main_t * sm, u32 sw_if_index,
                                    int enable_disable)
 {
   vnet_sw_interface_t * sw;
@@ -86,7 +86,7 @@ int sample_macswap_enable_disable (sample_main_t * sm, u32 sw_if_index,
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
   
-  vnet_feature_enable_disable ("device-input", "sample",
+  vnet_feature_enable_disable ("device-input", "ipfix",
                                sw_if_index, enable_disable, 0, 0);
 
   return rv;
@@ -97,7 +97,7 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
                                    unformat_input_t * input,
                                    vlib_cli_command_t * cmd)
 {
-  sample_main_t * sm = &sample_main;
+  ipfix_main_t * sm = &ipfix_main;
   u32 sw_if_index = ~0;
   int enable_disable = 1;
     
@@ -116,7 +116,7 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
   if (sw_if_index == ~0)
     return clib_error_return (0, "Please specify an interface...");
     
-  rv = sample_macswap_enable_disable (sm, sw_if_index, enable_disable);
+  rv = ipfix_macswap_enable_disable (sm, sw_if_index, enable_disable);
 
   switch(rv) {
   case 0:
@@ -132,45 +132,45 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
     break;
 
   default:
-    return clib_error_return (0, "sample_macswap_enable_disable returned %d",
+    return clib_error_return (0, "ipfix_macswap_enable_disable returned %d",
                               rv);
   }
   return 0;
 }
 
 /**
- * @brief CLI command to enable/disable the sample macswap plugin.
+ * @brief CLI command to enable/disable the ipfix macswap plugin.
  */
 VLIB_CLI_COMMAND (sr_content_command, static) = {
-    .path = "sample macswap",
+    .path = "ipfix macswap",
     .short_help = 
-    "sample macswap <interface-name> [disable]",
+    "ipfix macswap <interface-name> [disable]",
     .function = macswap_enable_disable_command_fn,
 };
 
 /**
  * @brief Plugin API message handler.
  */
-static void vl_api_sample_macswap_enable_disable_t_handler
-(vl_api_sample_macswap_enable_disable_t * mp)
+static void vl_api_ipfix_macswap_enable_disable_t_handler
+(vl_api_ipfix_macswap_enable_disable_t * mp)
 {
-  vl_api_sample_macswap_enable_disable_reply_t * rmp;
-  sample_main_t * sm = &sample_main;
+  vl_api_ipfix_macswap_enable_disable_reply_t * rmp;
+  ipfix_main_t * sm = &ipfix_main;
   int rv;
 
-  rv = sample_macswap_enable_disable (sm, ntohl(mp->sw_if_index), 
+  rv = ipfix_macswap_enable_disable (sm, ntohl(mp->sw_if_index), 
                                       (int) (mp->enable_disable));
   
-  REPLY_MACRO(VL_API_SAMPLE_MACSWAP_ENABLE_DISABLE_REPLY);
+  REPLY_MACRO(VL_API_IPFIX_MACSWAP_ENABLE_DISABLE_REPLY);
 }
 
 /**
  * @brief Set up the API message handling tables.
  */
 static clib_error_t *
-sample_plugin_api_hookup (vlib_main_t *vm)
+ipfix_plugin_api_hookup (vlib_main_t *vm)
 {
-  sample_main_t * sm = &sample_main;
+  ipfix_main_t * sm = &ipfix_main;
 #define _(N,n)                                                  \
     vl_msg_api_set_handlers((VL_API_##N + sm->msg_id_base),     \
                            #n,					\
@@ -179,7 +179,7 @@ sample_plugin_api_hookup (vlib_main_t *vm)
                            vl_api_##n##_t_endian,               \
                            vl_api_##n##_t_print,                \
                            sizeof(vl_api_##n##_t), 1); 
-    foreach_sample_plugin_api_msg;
+    foreach_ipfix_plugin_api_msg;
 #undef _
 
     return 0;
@@ -190,7 +190,7 @@ sample_plugin_api_hookup (vlib_main_t *vm)
 #undef vl_msg_name_crc_list
 
 static void 
-setup_message_id_table (sample_main_t * sm, api_main_t *am)
+setup_message_id_table (ipfix_main_t * sm, api_main_t *am)
 {
 #define _(id,n,crc) \
   vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + sm->msg_id_base);
@@ -199,23 +199,23 @@ setup_message_id_table (sample_main_t * sm, api_main_t *am)
 }
 
 /**
- * @brief Initialize the sample plugin.
+ * @brief Initialize the ipfix plugin.
  */
-static clib_error_t * sample_init (vlib_main_t * vm)
+static clib_error_t * ipfix_init (vlib_main_t * vm)
 {
-  sample_main_t * sm = &sample_main;
+  ipfix_main_t * sm = &ipfix_main;
   clib_error_t * error = 0;
   u8 * name;
 
   sm->vnet_main =  vnet_get_main ();
 
-  name = format (0, "sample_%08x%c", api_version, 0);
+  name = format (0, "ipfix_%08x%c", api_version, 0);
 
   /* Ask for a correctly-sized block of API message decode slots */
   sm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
-  error = sample_plugin_api_hookup (vm);
+  error = ipfix_plugin_api_hookup (vm);
 
   /* Add our API messages to the global name_crc hash table */
   setup_message_id_table (sm, &api_main);
@@ -225,14 +225,14 @@ static clib_error_t * sample_init (vlib_main_t * vm)
   return error;
 }
 
-VLIB_INIT_FUNCTION (sample_init);
+VLIB_INIT_FUNCTION (ipfix_init);
 
 /**
- * @brief Hook the sample plugin into the VPP graph hierarchy.
+ * @brief Hook the ipfix plugin into the VPP graph hierarchy.
  */
-VNET_FEATURE_INIT (sample, static) = 
+VNET_FEATURE_INIT (ipfix, static) = 
 {
   .arc_name = "device-input",
-  .node_name = "sample",
+  .node_name = "ipfix",
   .runs_before = VNET_FEATURES ("ethernet-input"),
 };

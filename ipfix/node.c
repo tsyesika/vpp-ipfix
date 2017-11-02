@@ -21,72 +21,51 @@
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
-  u8 new_src_mac[6];
-  u8 new_dst_mac[6];
-} sample_trace_t;
-
-static u8 *
-format_mac_address (u8 * s, va_list * args)
-{
-  u8 *a = va_arg (*args, u8 *);
-  return format (s, "%02x:%02x:%02x:%02x:%02x:%02x",
-		 a[0], a[1], a[2], a[3], a[4], a[5]);
-}
+} ipfix_trace_t;
 
 /* packet trace format function */
-static u8 * format_sample_trace (u8 * s, va_list * args)
+static u8 * format_ipfix_trace (u8 * s, va_list * args)
 {
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
-  sample_trace_t * t = va_arg (*args, sample_trace_t *);
+  ipfix_trace_t * t = va_arg (*args, ipfix_trace_t *);
   
-  s = format (s, "SAMPLE: sw_if_index %d, next index %d\n",
+  s = format (s, "IPFIX: sw_if_index %d, next index %d\n",
               t->sw_if_index, t->next_index);
-  s = format (s, "  new src %U -> new dst %U",
-              format_mac_address, t->new_src_mac, 
-              format_mac_address, t->new_dst_mac);
 
   return s;
 }
 
-vlib_node_registration_t sample_node;
+vlib_node_registration_t ipfix_node;
 
-#define foreach_sample_error \
-_(SWAPPED, "Mac swap packets processed")
+#define foreach_ipfix_error \
+_(SWAPPED, "Error (fixme)")
 
 typedef enum {
-#define _(sym,str) SAMPLE_ERROR_##sym,
-  foreach_sample_error
+#define _(sym,str) IPFIX_ERROR_##sym,
+  foreach_ipfix_error
 #undef _
-  SAMPLE_N_ERROR,
-} sample_error_t;
+  IPFIX_N_ERROR,
+} ipfix_error_t;
 
-static char * sample_error_strings[] = {
+static char * ipfix_error_strings[] = {
 #define _(sym,string) string,
-  foreach_sample_error
+  foreach_ipfix_error
 #undef _
 };
 
 typedef enum {
-  SAMPLE_NEXT_INTERFACE_OUTPUT,
-  SAMPLE_N_NEXT,
-} sample_next_t;
-
-#define foreach_mac_address_offset              \
-_(0)                                            \
-_(1)                                            \
-_(2)                                            \
-_(3)                                            \
-_(4)                                            \
-_(5)
+  IPFIX_NEXT_INTERFACE_OUTPUT,
+  IPFIX_N_NEXT,
+} ipfix_next_t;
 
 static uword
-sample_node_fn (vlib_main_t * vm,
+ipfix_node_fn (vlib_main_t * vm,
 		  vlib_node_runtime_t * node,
 		  vlib_frame_t * frame)
 {
   u32 n_left_from, * from, * to_next;
-  sample_next_t next_index;
+  ipfix_next_t next_index;
   u32 pkts_swapped = 0;
 
   from = vlib_frame_vector_args (frame);
@@ -102,8 +81,8 @@ sample_node_fn (vlib_main_t * vm,
 
       while (n_left_from >= 4 && n_left_to_next >= 2)
 	{
-          u32 next0 = SAMPLE_NEXT_INTERFACE_OUTPUT;
-          u32 next1 = SAMPLE_NEXT_INTERFACE_OUTPUT;
+          u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
+          u32 next1 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0, sw_if_index1;
           u8 tmp0[6], tmp1[6];
           ethernet_header_t *en0, *en1;
@@ -141,29 +120,6 @@ sample_node_fn (vlib_main_t * vm,
           en0 = vlib_buffer_get_current (b0);
           en1 = vlib_buffer_get_current (b1);
 
-          /* This is not the fastest way to swap src + dst mac addresses */
-#define _(a) tmp0[a] = en0->src_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->src_address[a] = en0->dst_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->dst_address[a] = tmp0[a];
-          foreach_mac_address_offset;
-#undef _
-
-#define _(a) tmp1[a] = en1->src_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en1->src_address[a] = en1->dst_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en1->dst_address[a] = tmp1[a];
-          foreach_mac_address_offset;
-#undef _
-
-
-
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
           sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
 
@@ -177,26 +133,17 @@ sample_node_fn (vlib_main_t * vm,
             {
               if (b0->flags & VLIB_BUFFER_IS_TRACED) 
                 {
-                    sample_trace_t *t = 
+                    ipfix_trace_t *t = 
                       vlib_add_trace (vm, node, b0, sizeof (*t));
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
-                    clib_memcpy (t->new_src_mac, en0->src_address,
-                                 sizeof (t->new_src_mac));
-                    clib_memcpy (t->new_dst_mac, en0->dst_address,
-                                 sizeof (t->new_dst_mac));
-                    
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED) 
                   {
-                    sample_trace_t *t = 
+                    ipfix_trace_t *t = 
                       vlib_add_trace (vm, node, b1, sizeof (*t));
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
-                    clib_memcpy (t->new_src_mac, en1->src_address,
-                                 sizeof (t->new_src_mac));
-                    clib_memcpy (t->new_dst_mac, en1->dst_address,
-                                 sizeof (t->new_dst_mac));
                   }
               }
             
@@ -210,7 +157,7 @@ sample_node_fn (vlib_main_t * vm,
 	{
           u32 bi0;
 	  vlib_buffer_t * b0;
-          u32 next0 = SAMPLE_NEXT_INTERFACE_OUTPUT;
+          u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0;
           u8 tmp0[6];
           ethernet_header_t *en0;
@@ -232,17 +179,6 @@ sample_node_fn (vlib_main_t * vm,
           
           en0 = vlib_buffer_get_current (b0);
 
-          /* This is not the fastest way to swap src + dst mac addresses */
-#define _(a) tmp0[a] = en0->src_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->src_address[a] = en0->dst_address[a];
-          foreach_mac_address_offset;
-#undef _
-#define _(a) en0->dst_address[a] = tmp0[a];
-          foreach_mac_address_offset;
-#undef _
-
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
           /* Send pkt back out the RX interface */
@@ -250,14 +186,10 @@ sample_node_fn (vlib_main_t * vm,
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE) 
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
-            sample_trace_t *t = 
+            ipfix_trace_t *t = 
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
-            clib_memcpy (t->new_src_mac, en0->src_address,
-                         sizeof (t->new_src_mac));
-            clib_memcpy (t->new_dst_mac, en0->dst_address,
-                         sizeof (t->new_dst_mac));
             }
             
           pkts_swapped += 1;
@@ -271,25 +203,25 @@ sample_node_fn (vlib_main_t * vm,
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  vlib_node_increment_counter (vm, sample_node.index, 
-                               SAMPLE_ERROR_SWAPPED, pkts_swapped);
+  vlib_node_increment_counter (vm, ipfix_node.index, 
+                               IPFIX_ERROR_SWAPPED, pkts_swapped);
   return frame->n_vectors;
 }
 
-VLIB_REGISTER_NODE (sample_node) = {
-  .function = sample_node_fn,
-  .name = "sample",
+VLIB_REGISTER_NODE (ipfix_node) = {
+  .function = ipfix_node_fn,
+  .name = "ipfix",
   .vector_size = sizeof (u32),
-  .format_trace = format_sample_trace,
+  .format_trace = format_ipfix_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
   
-  .n_errors = ARRAY_LEN(sample_error_strings),
-  .error_strings = sample_error_strings,
+  .n_errors = ARRAY_LEN(ipfix_error_strings),
+  .error_strings = ipfix_error_strings,
 
-  .n_next_nodes = SAMPLE_N_NEXT,
+  .n_next_nodes = IPFIX_N_NEXT,
 
   /* edit / add dispositions here */
   .next_nodes = {
-        [SAMPLE_NEXT_INTERFACE_OUTPUT] = "interface-output",
+        [IPFIX_NEXT_INTERFACE_OUTPUT] = "interface-output",
   },
 };

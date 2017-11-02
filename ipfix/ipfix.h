@@ -29,12 +29,12 @@ typedef struct {
 
     /* convenience */
     vnet_main_t * vnet_main;
-} sample_main_t;
+} ipfix_main_t;
 
-sample_main_t sample_main;
+ipfix_main_t ipfix_main;
 
-extern vlib_node_registration_t sample_node;
+extern vlib_node_registration_t ipfix_node;
 
-#define SAMPLE_PLUGIN_BUILD_VER "1.0"
+#define IPFIX_PLUGIN_BUILD_VER "1.0"
 
 #endif /* __included_ipfix_h__ */
