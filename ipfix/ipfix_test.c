@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2017 Igalia
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -14,7 +14,7 @@
  */
 /*
  *------------------------------------------------------------------
- * sample_test.c - test harness plugin
+ * ipfix_test.c - test harness plugin
  *------------------------------------------------------------------
  */
 
@@ -30,28 +30,28 @@
 uword unformat_sw_if_index (unformat_input_t * input, va_list * args);
 
 /* Declare message IDs */
-#include <sample/sample_msg_enum.h>
+#include <ipfix/ipfix_msg_enum.h>
 
 /* define message structures */
 #define vl_typedefs
-#include <sample/sample_all_api_h.h> 
+#include <ipfix/ipfix_all_api_h.h> 
 #undef vl_typedefs
 
 /* declare message handlers for each api */
 
 #define vl_endianfun             /* define message structures */
-#include <sample/sample_all_api_h.h> 
+#include <ipfix/ipfix_all_api_h.h> 
 #undef vl_endianfun
 
 /* instantiate all the print functions we know about */
 #define vl_print(handle, ...)
 #define vl_printfun
-#include <sample/sample_all_api_h.h> 
+#include <ipfix/ipfix_all_api_h.h> 
 #undef vl_printfun
 
 /* Get the API version number. */
 #define vl_api_version(n,v) static u32 api_version=(v);
-#include <sample/sample_all_api_h.h>
+#include <ipfix/ipfix_all_api_h.h>
 #undef vl_api_version
 
 

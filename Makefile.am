@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Cisco and/or its affiliates.
+# Copyright (c) 2017 Igalia
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at:
@@ -28,7 +28,7 @@ ACLOCAL_AMFLAGS = -I m4
 vppapitestpluginsdir = ${libdir}/vpp_api_test_plugins
 vpppluginsdir = ${libdir}/vpp_plugins
 
-include sample.am
+include ipfix.am
 
 %.api.h: %.api
 	mkdir -p `dirname $@` ; \

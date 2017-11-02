@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2017 Igalia
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -12,8 +12,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef __included_sample_h__
-#define __included_sample_h__
+#ifndef __included_ipfix_h__
+#define __included_ipfix_h__
 
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
@@ -37,4 +37,4 @@ extern vlib_node_registration_t sample_node;
 
 #define SAMPLE_PLUGIN_BUILD_VER "1.0"
 
-#endif /* __included_sample_h__ */
+#endif /* __included_ipfix_h__ */

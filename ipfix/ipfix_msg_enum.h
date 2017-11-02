@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2017 Igalia
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -19,10 +19,10 @@
 
 #define vl_msg_id(n,h) n,
 typedef enum {
-#include <sample/sample_all_api_h.h>
+#include <ipfix/ipfix_all_api_h.h>
     /* We'll want to know how many messages IDs we need... */
     VL_MSG_FIRST_AVAILABLE,
 } vl_msg_id_t;
 #undef vl_msg_id
 
-#endif /* included_sample_msg_enum_h */
+#endif /* included_ipfix_msg_enum_h */

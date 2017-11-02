@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015 Cisco and/or its affiliates.
+ * Copyright (c) 2017 Igalia
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at:
@@ -14,39 +14,39 @@
  */
 /**
  * @file
- * @brief Sample Plugin, plugin API / trace / CLI handling.
+ * @brief IPFIX Plugin, plugin API / trace / CLI handling.
  */
 
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
-#include <sample/sample.h>
+#include <ipfix/ipfix.h>
 
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 #include <vlibsocket/api.h>
 
 /* define message IDs */
-#include <sample/sample_msg_enum.h>
+#include <ipfix/ipfix_msg_enum.h>
 
 /* define message structures */
 #define vl_typedefs
-#include <sample/sample_all_api_h.h> 
+#include <ipfix/ipfix_all_api_h.h> 
 #undef vl_typedefs
 
 /* define generated endian-swappers */
 #define vl_endianfun
-#include <sample/sample_all_api_h.h> 
+#include <ipfix/ipfix_all_api_h.h> 
 #undef vl_endianfun
 
 /* instantiate all the print functions we know about */
 #define vl_print(handle, ...) vlib_cli_output (handle, __VA_ARGS__)
 #define vl_printfun
-#include <sample/sample_all_api_h.h> 
+#include <ipfix/ipfix_all_api_h.h> 
 #undef vl_printfun
 
 /* Get the API version number */
 #define vl_api_version(n,v) static u32 api_version=(v);
-#include <sample/sample_all_api_h.h>
+#include <ipfix/ipfix_all_api_h.h>
 #undef vl_api_version
 
 #define REPLY_MSG_ID_BASE sm->msg_id_base
@@ -186,7 +186,7 @@ sample_plugin_api_hookup (vlib_main_t *vm)
 }
 
 #define vl_msg_name_crc_list
-#include <sample/sample_all_api_h.h>
+#include <ipfix/ipfix_all_api_h.h>
 #undef vl_msg_name_crc_list
 
 static void 
@@ -194,7 +194,7 @@ setup_message_id_table (sample_main_t * sm, api_main_t *am)
 {
 #define _(id,n,crc) \
   vl_msg_api_add_msg_name_crc (am, #n "_" #crc, id + sm->msg_id_base);
-  foreach_vl_msg_name_crc_sample;
+  foreach_vl_msg_name_crc_ipfix;
 #undef _
 }
 
