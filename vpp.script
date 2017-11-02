@@ -1,0 +1,5 @@
+tap connect foobar
+set int ip address tap-0 10.0.0.1/24
+set int state tap-0 up
+ipfix macswap tap-0
+trace add tapcli-rx 30
