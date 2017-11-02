@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 #include <vlib/vlib.h>
+#include <vnet/ip/format.h>
+#include <vnet/ip/ip4_packet.h>
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
@@ -23,6 +25,7 @@ ipfix_main_t ipfix_main;
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
+  ip4_address_t src;
 } ipfix_trace_t;
 
 /* packet trace format function */
@@ -32,8 +35,8 @@ static u8 * format_ipfix_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   ipfix_trace_t * t = va_arg (*args, ipfix_trace_t *);
   
-  s = format (s, "IPFIX: sw_if_index %d, next index %d, counter %d\n",
-              t->sw_if_index, t->next_index, (&ipfix_main)->packet_counter);
+  s = format (s, "IPFIX: sw_if_index %d, next index %d, src %U\n",
+              t->sw_if_index, t->next_index, format_ip4_address, &t->src);
 
   return s;
 }
@@ -140,6 +143,7 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b0, sizeof (*t));
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
+                    t->src = ((ip4_header_t*)en0)->src_address;
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED) 
                   {
@@ -147,6 +151,7 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b1, sizeof (*t));
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
+                    t->src = ((ip4_header_t*)en1)->src_address;
                   }
               }
             
@@ -193,6 +198,7 @@ ipfix_node_fn (vlib_main_t * vm,
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
+            t->src = ((ip4_header_t*)en0)->src_address;
             }
             
           pkts_swapped += 1;
