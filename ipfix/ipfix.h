@@ -27,11 +27,14 @@ typedef struct {
     /* API message ID base */
     u16 msg_id_base;
 
+    /* Counter for packets */
+    u32 packet_counter;
+
     /* convenience */
     vnet_main_t * vnet_main;
 } ipfix_main_t;
 
-ipfix_main_t ipfix_main;
+extern ipfix_main_t ipfix_main;
 
 extern vlib_node_registration_t ipfix_node;
 

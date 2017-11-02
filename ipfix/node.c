@@ -18,6 +18,8 @@
 #include <vppinfra/error.h>
 #include <ipfix/ipfix.h>
 
+ipfix_main_t ipfix_main;
+
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
@@ -30,8 +32,8 @@ static u8 * format_ipfix_trace (u8 * s, va_list * args)
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   ipfix_trace_t * t = va_arg (*args, ipfix_trace_t *);
   
-  s = format (s, "IPFIX: sw_if_index %d, next index %d\n",
-              t->sw_if_index, t->next_index);
+  s = format (s, "IPFIX: sw_if_index %d, next index %d, counter %d\n",
+              t->sw_if_index, t->next_index, (&ipfix_main)->packet_counter);
 
   return s;
 }
@@ -128,6 +130,7 @@ ipfix_node_fn (vlib_main_t * vm,
           vnet_buffer(b1)->sw_if_index[VLIB_TX] = sw_if_index1;
 
           pkts_swapped += 2;
+          (&ipfix_main)->packet_counter += 2;
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
             {
@@ -193,6 +196,7 @@ ipfix_node_fn (vlib_main_t * vm,
             }
             
           pkts_swapped += 1;
+          (&ipfix_main)->packet_counter += 1;
 
           /* verify speculative enqueue, maybe switch current next frame */
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
