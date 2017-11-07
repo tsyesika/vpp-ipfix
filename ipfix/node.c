@@ -249,6 +249,6 @@ VLIB_REGISTER_NODE (ipfix_node) = {
 
   /* edit / add dispositions here */
   .next_nodes = {
-        [IPFIX_NEXT_INTERFACE_OUTPUT] = "interface-output",
+        [IPFIX_NEXT_INTERFACE_OUTPUT] = "ip4-lookup",
   },
 };

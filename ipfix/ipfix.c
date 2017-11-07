@@ -86,7 +86,7 @@ int ipfix_macswap_enable_disable (ipfix_main_t * sm, u32 sw_if_index,
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
   
-  vnet_feature_enable_disable ("device-input", "ipfix",
+  vnet_feature_enable_disable ("ip4-unicast", "ipfix",
                                sw_if_index, enable_disable, 0, 0);
 
   return rv;
@@ -232,7 +232,7 @@ VLIB_INIT_FUNCTION (ipfix_init);
  */
 VNET_FEATURE_INIT (ipfix, static) = 
 {
-  .arc_name = "device-input",
+  .arc_name = "ip4-unicast",
   .node_name = "ipfix",
-  .runs_before = VNET_FEATURES ("ethernet-input"),
+  .runs_before = VNET_FEATURES ("ip4-lookup"),
 };
