@@ -215,6 +215,9 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
+  /* Initialize IP vector */
+  sm->ip_vec = 0;
+
   error = ipfix_plugin_api_hookup (vm);
 
   /* Add our API messages to the global name_crc hash table */

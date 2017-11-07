@@ -22,6 +22,7 @@
 #include <vppinfra/hash.h>
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
+#include <vppinfra/vec.h>
 
 typedef struct {
     /* API message ID base */
@@ -29,6 +30,9 @@ typedef struct {
 
     /* Counter for packets */
     u32 packet_counter;
+
+    /* IP -> count */
+    ip4_address_t * ip_vec;
 
     /* convenience */
     vnet_main_t * vnet_main;

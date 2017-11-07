@@ -20,6 +20,7 @@
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
+#include <vppinfra/vec.h>
 #include <ipfix/ipfix.h>
 
 ipfix_main_t ipfix_main;
@@ -27,21 +28,26 @@ ipfix_main_t ipfix_main;
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
-  ip4_address_t src;
-  ip4_header_t* header;
+  ip4_address_t* vec;
 } ipfix_trace_t;
 
 /* packet trace format function */
 static u8 * format_ipfix_trace (u8 * s, va_list * args)
 {
+  ip4_address_t * elem;
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   ipfix_trace_t * t = va_arg (*args, ipfix_trace_t *);
 
-  s = format (s, "IPFIX: sw_if_index %d, next index %d, src %U, IPv4 header %U\n",
-              t->sw_if_index, t->next_index,
-	      format_ip4_address, &t->src,
-	      format_ip4_header, t->header);
+  s = format (s, "IPFIX: sw_if_index %d, next index %d\n",
+              t->sw_if_index, t->next_index);
+
+  vec_validate(t->vec, 0);
+  vec_foreach(elem, t->vec) {
+    s = format (s, " ip: %U", format_ip4_address, elem);
+  }
+
+  s = format(s, "\n");
 
   return s;
 }
@@ -77,6 +83,7 @@ ipfix_node_fn (vlib_main_t * vm,
   u32 n_left_from, * from, * to_next;
   ipfix_next_t next_index;
   u32 pkts_swapped = 0;
+  ipfix_main_t * im = &ipfix_main;
 
   // Turn debugging on - remove me once fixed.
   node->flags = VLIB_NODE_FLAG_TRACE;
@@ -145,7 +152,9 @@ ipfix_node_fn (vlib_main_t * vm,
           vnet_buffer(b1)->sw_if_index[VLIB_TX] = sw_if_index1;
 
           pkts_swapped += 2;
-          (&ipfix_main)->packet_counter += 2;
+          im->packet_counter += 2;
+          vec_add1(im->ip_vec, ip0->src_address);
+          vec_add1(im->ip_vec, ip1->src_address);
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
             {
@@ -155,8 +164,7 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b0, sizeof (*t));
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
-                    t->src = ip0->src_address;
-		    t->header = ip0;
+                    t->vec = im->ip_vec;
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED)
                   {
@@ -164,8 +172,7 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b1, sizeof (*t));
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
-                    t->src = ip1->src_address;
-		    t->header = ip1;
+                    t->vec = im->ip_vec;
                   }
               }
 
@@ -208,18 +215,18 @@ ipfix_node_fn (vlib_main_t * vm,
           /* Send pkt back out the RX interface */
           vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
 
+          pkts_swapped += 1;
+          im->packet_counter += 1;
+          vec_add1(im->ip_vec, ip0->src_address);
+
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
             ipfix_trace_t *t =
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
-            t->src = ip0->src_address;
-	    t->header = ip0;
+            t->vec = im->ip_vec;
 	  }
-
-          pkts_swapped += 1;
-          (&ipfix_main)->packet_counter += 1;
 
           /* verify speculative enqueue, maybe switch current next frame */
 	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
