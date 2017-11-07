@@ -135,21 +135,11 @@ ipfix_node_fn (vlib_main_t * vm,
 	  b0 = vlib_get_buffer (vm, bi0);
 	  b1 = vlib_get_buffer (vm, bi1);
 
-          ASSERT (b0->current_data == 0);
-          ASSERT (b1->current_data == 0);
-
-          en0 = vlib_buffer_get_current (b0);
-          en1 = vlib_buffer_get_current (b1);
-
-	  ip0 = (ip4_header_t *)((u8*)b0->data + sizeof(ethernet_header_t));
-	  ip1 = (ip4_header_t *)((u8*)b1->data + sizeof(ethernet_header_t));
+          ip0 = vlib_buffer_get_current (b0);
+          ip1 = vlib_buffer_get_current (b1);
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
           sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
-
-          /* Send pkt back out the RX interface */
-          vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
-          vnet_buffer(b1)->sw_if_index[VLIB_TX] = sw_if_index1;
 
           pkts_swapped += 2;
           im->packet_counter += 2;
@@ -201,19 +191,10 @@ ipfix_node_fn (vlib_main_t * vm,
 	  n_left_to_next -= 1;
 
 	  b0 = vlib_get_buffer (vm, bi0);
-          /*
-           * Direct from the driver, we should be at offset 0
-           * aka at &b0->data[0]
-           */
-          ASSERT (b0->current_data == 0);
 
-          en0 = vlib_buffer_get_current (b0);
-	  ip0 = (ip4_header_t *)((u8*)b0->data + sizeof(ethernet_header_t));
+          ip0 = vlib_buffer_get_current (b0);
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
-
-          /* Send pkt back out the RX interface */
-          vnet_buffer(b0)->sw_if_index[VLIB_TX] = sw_if_index0;
 
           pkts_swapped += 1;
           im->packet_counter += 1;
