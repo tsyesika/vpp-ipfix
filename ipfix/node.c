@@ -154,7 +154,7 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b0, sizeof (*t));
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
-                    t->vec = im->ip_vec;
+                    t->vec = vec_dup(im->ip_vec);
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED)
                   {
@@ -162,7 +162,7 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b1, sizeof (*t));
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
-                    t->vec = im->ip_vec;
+                    t->vec = vec_dup(im->ip_vec);
                   }
               }
 
@@ -206,7 +206,7 @@ ipfix_node_fn (vlib_main_t * vm,
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
-            t->vec = im->ip_vec;
+            t->vec = vec_dup(im->ip_vec);
 	  }
 
           /* verify speculative enqueue, maybe switch current next frame */
