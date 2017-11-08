@@ -18,7 +18,7 @@
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
 #include <vnet/ethernet/ethernet.h>
-
+#include <vppinfra/bihash_48_8.h>
 #include <vppinfra/hash.h>
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
@@ -34,9 +34,26 @@ typedef struct {
     /* IP -> count */
     ip4_address_t * ip_vec;
 
+    clib_bihash_48_8_t flow_hash;
+
     /* convenience */
     vnet_main_t * vnet_main;
 } ipfix_main_t;
+
+typedef struct {
+  ip4_address_t src;
+  ip4_address_t dst;
+  u8 protocol;
+  u16 src_port;
+  u16 dst_port;
+} ipfix_ip4_flow_key_t;
+
+typedef struct {
+  u64 flow_start; //milliseconds;
+  u64 flow_end; // milliseconds;
+  u64 packet_delta_count;
+  u64 octet_delta_count;
+} ipfix_ip4_flow_value_t;
 
 extern ipfix_main_t ipfix_main;
 

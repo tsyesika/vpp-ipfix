@@ -17,11 +17,18 @@
 #include <vnet/ip/format.h>
 #include <vnet/ip/ip4_packet.h>
 #include <vnet/ethernet/ethernet.h>
+#include <vnet/udp/udp_packet.h>
+#include <vnet/tcp/tcp_packet.h>
 #include <vnet/vnet.h>
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
 #include <vppinfra/vec.h>
+#include <vppinfra/bihash_48_8.h>
 #include <ipfix/ipfix.h>
+
+
+#define TCP_PROTOCOL 6
+#define UDP_PROTOCOL 17
 
 ipfix_main_t ipfix_main;
 
@@ -29,9 +36,32 @@ typedef struct {
   u32 next_index;
   u32 sw_if_index;
   ip4_address_t* vec;
+  clib_bihash_48_8_t flow_hash;
 } ipfix_trace_t;
 
-/* packet trace format function */
+
+static void format_ipfix_ip4_flow_key(u8 *s, va_list *args) {
+  ipfix_ip4_flow_key_t *flow_key = va_arg (*args, ipfix_ip4_flow_key_t *);
+
+  s = format(s, "[Flow key] src: %U, dst: %U, protocol: %d, src port: %U, dst port: %U\n",
+             format_ip4_address, &flow_key->src,
+             format_ip4_address, &flow_key->dst,
+             flow_key->protocol,
+             format_tcp_udp_port, &flow_key->src_port,
+             format_tcp_udp_port, &flow_key->dst_port);
+  return s;
+
+}
+
+static void flow_hash_key_value_callback(clib_bihash_kv_48_8_t *keyvalue, void **string) {
+  u8 *s = *(u8 **)string;
+  //ipfix_ip4_flow_key_t flow_key;
+  //memcpy(&flow_key, &keyvalue.key, sizeof(ipfix_ip4_flow_key_t));
+
+  *(u8 **)string = format(s, " %U ", format_ipfix_ip4_flow_key, &keyvalue->key);
+}
+
+/* packet trace+ format function */
 static u8 * format_ipfix_trace (u8 * s, va_list * args)
 {
   ip4_address_t * elem;
@@ -46,6 +76,9 @@ static u8 * format_ipfix_trace (u8 * s, va_list * args)
   vec_foreach(elem, t->vec) {
     s = format (s, " ip: %U", format_ip4_address, elem);
   }
+
+
+  BV (clib_bihash_foreach_key_value_pair)(&t->flow_hash, flow_hash_key_value_callback, &s);
 
   s = format(s, "\n");
 
@@ -74,6 +107,33 @@ typedef enum {
   IPFIX_NEXT_INTERFACE_OUTPUT,
   IPFIX_N_NEXT,
 } ipfix_next_t;
+
+static void insert_packet_flow_hash(clib_bihash_48_8_t *flow_hash, ip4_header_t *packet) {
+  ipfix_ip4_flow_key_t flow_key;
+  ipfix_ip4_flow_value_t flow_value;
+  clib_bihash_kv_48_8_t keyvalue;
+
+  flow_key.src = packet->src_address;
+  flow_key.dst = packet->dst_address;
+  flow_key.protocol = packet->protocol;
+
+  switch (packet->protocol) {
+  case UDP_PROTOCOL:
+    flow_key.src_port = ((udp_header_t *)(packet + 1))->src_port;
+    flow_key.dst_port = ((udp_header_t *)(packet + 1))->dst_port;
+    break;
+  case TCP_PROTOCOL:
+    flow_key.src_port = ((tcp_header_t *)(packet + 1))->src_port;
+    flow_key.dst_port = ((tcp_header_t *)(packet + 1))->dst_port;
+    break;
+  default:
+    flow_key.src_port = 0;
+    flow_key.dst_port = 0;
+  }
+
+  memcpy(&keyvalue.key, &flow_key, sizeof(ipfix_ip4_flow_key_t));
+  clib_bihash_add_del_48_8(flow_hash, &keyvalue, 1);
+}
 
 static uword
 ipfix_node_fn (vlib_main_t * vm,
@@ -146,6 +206,9 @@ ipfix_node_fn (vlib_main_t * vm,
           vec_add1(im->ip_vec, ip0->src_address);
           vec_add1(im->ip_vec, ip1->src_address);
 
+          insert_packet_flow_hash(&im->flow_hash, ip0);
+          insert_packet_flow_hash(&im->flow_hash, ip1);
+
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
             {
               if (b0->flags & VLIB_BUFFER_IS_TRACED)
@@ -155,6 +218,7 @@ ipfix_node_fn (vlib_main_t * vm,
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
                     t->vec = vec_dup(im->ip_vec);
+                    t->flow_hash = im->flow_hash;
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED)
                   {
@@ -163,6 +227,7 @@ ipfix_node_fn (vlib_main_t * vm,
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
                     t->vec = vec_dup(im->ip_vec);
+                    t->flow_hash = im->flow_hash;
                   }
               }
 
@@ -200,6 +265,8 @@ ipfix_node_fn (vlib_main_t * vm,
           im->packet_counter += 1;
           vec_add1(im->ip_vec, ip0->src_address);
 
+          insert_packet_flow_hash(&im->flow_hash, ip0);
+
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
             ipfix_trace_t *t =
@@ -207,6 +274,7 @@ ipfix_node_fn (vlib_main_t * vm,
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
             t->vec = vec_dup(im->ip_vec);
+            t->flow_hash = im->flow_hash;
 	  }
 
           /* verify speculative enqueue, maybe switch current next frame */
