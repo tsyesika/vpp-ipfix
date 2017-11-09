@@ -108,35 +108,53 @@ typedef enum {
   IPFIX_N_NEXT,
 } ipfix_next_t;
 
-static void insert_packet_flow_hash(clib_bihash_48_8_t *flow_hash, ip4_header_t *packet) {
-  ipfix_ip4_flow_key_t flow_key;
-  ipfix_ip4_flow_value_t flow_value;
-  clib_bihash_kv_48_8_t keyvalue;
+static void insert_packet_flow_hash(clib_bihash_kv_48_8_t *keyvalue) {
+  ipfix_main_t * im = &ipfix_main;
+  clib_bihash_add_del_48_8(&im->flow_hash, keyvalue, 1);
+}
 
-  flow_key.src = packet->src_address;
-  flow_key.dst = packet->dst_address;
-  flow_key.protocol = packet->protocol;
+static void create_flow_key(ipfix_ip4_flow_key_t *flow_key, ip4_header_t *packet) {
+  flow_key->src = packet->src_address;
+  flow_key->dst = packet->dst_address;
+  flow_key->protocol = packet->protocol;
 
   switch (packet->protocol) {
     udp_header_t *udp;
     tcp_header_t *tcp;
   case UDP_PROTOCOL:
     udp = ip4_next_header(packet);
-    flow_key.src_port = udp->src_port;
-    flow_key.dst_port = udp->dst_port;
+    flow_key->src_port = udp->src_port;
+    flow_key->dst_port = udp->dst_port;
     break;
   case TCP_PROTOCOL:
     tcp = ip4_next_header(packet);
-    flow_key.src_port = tcp->src_port;
-    flow_key.dst_port = tcp->dst_port;
+    flow_key->src_port = tcp->src_port;
+    flow_key->dst_port = tcp->dst_port;
     break;
   default:
-    flow_key.src_port = 0;
-    flow_key.dst_port = 0;
+    flow_key->src_port = 0;
+    flow_key->dst_port = 0;
   }
+}
 
-  memcpy(&keyvalue.key, &flow_key, sizeof(ipfix_ip4_flow_key_t));
-  clib_bihash_add_del_48_8(flow_hash, &keyvalue, 1);
+static void process_packet(ip4_header_t *packet) {
+  ipfix_main_t * im = &ipfix_main;
+  clib_bihash_kv_48_8_t search, result;
+  int status;
+
+  memset(&search, 0, sizeof(clib_bihash_kv_48_8_t));
+  memset(&result, 0, sizeof(clib_bihash_kv_48_8_t));
+
+  create_flow_key((ipfix_ip4_flow_key_t*) &search.key, packet);
+
+  status = clib_bihash_search_48_8(&im->flow_hash, &search, &result);
+
+  if (status < 0) {
+    // create a record, put into search
+    insert_packet_flow_hash(&search);
+  } else {
+    // update record
+  }
 }
 
 static uword
@@ -210,8 +228,8 @@ ipfix_node_fn (vlib_main_t * vm,
           vec_add1(im->ip_vec, ip0->src_address);
           vec_add1(im->ip_vec, ip1->src_address);
 
-          insert_packet_flow_hash(&im->flow_hash, ip0);
-          insert_packet_flow_hash(&im->flow_hash, ip1);
+          process_packet(ip0);
+          process_packet(ip1);
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
             {
@@ -269,7 +287,7 @@ ipfix_node_fn (vlib_main_t * vm,
           im->packet_counter += 1;
           vec_add1(im->ip_vec, ip0->src_address);
 
-          insert_packet_flow_hash(&im->flow_hash, ip0);
+          process_packet(ip0);
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {

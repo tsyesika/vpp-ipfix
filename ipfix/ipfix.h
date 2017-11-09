@@ -25,6 +25,22 @@
 #include <vppinfra/vec.h>
 
 typedef struct {
+  ip4_address_t src;
+  ip4_address_t dst;
+  u8 protocol;
+  u16 src_port;
+  u16 dst_port;
+} ipfix_ip4_flow_key_t;
+
+typedef struct {
+  ipfix_ip4_flow_key_t flow_key;
+  u64 flow_start; //milliseconds;
+  u64 flow_end; // milliseconds;
+  u64 packet_delta_count;
+  u64 octet_delta_count;
+} ipfix_ip4_flow_value_t;
+
+typedef struct {
     /* API message ID base */
     u16 msg_id_base;
 
@@ -36,24 +52,12 @@ typedef struct {
 
     clib_bihash_48_8_t flow_hash;
 
+    /* vector of flow records */
+    ipfix_ip4_flow_value_t * flow_records;
+
     /* convenience */
     vnet_main_t * vnet_main;
 } ipfix_main_t;
-
-typedef struct {
-  ip4_address_t src;
-  ip4_address_t dst;
-  u8 protocol;
-  u16 src_port;
-  u16 dst_port;
-} ipfix_ip4_flow_key_t;
-
-typedef struct {
-  u64 flow_start; //milliseconds;
-  u64 flow_end; // milliseconds;
-  u64 packet_delta_count;
-  u64 octet_delta_count;
-} ipfix_ip4_flow_value_t;
 
 extern ipfix_main_t ipfix_main;
 
