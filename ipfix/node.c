@@ -118,13 +118,17 @@ static void insert_packet_flow_hash(clib_bihash_48_8_t *flow_hash, ip4_header_t 
   flow_key.protocol = packet->protocol;
 
   switch (packet->protocol) {
+    udp_header_t *udp;
+    tcp_header_t *tcp;
   case UDP_PROTOCOL:
-    flow_key.src_port = ((udp_header_t *)(packet + 1))->src_port;
-    flow_key.dst_port = ((udp_header_t *)(packet + 1))->dst_port;
+    udp = ip4_next_header(packet);
+    flow_key.src_port = udp->src_port;
+    flow_key.dst_port = udp->dst_port;
     break;
   case TCP_PROTOCOL:
-    flow_key.src_port = ((tcp_header_t *)(packet + 1))->src_port;
-    flow_key.dst_port = ((tcp_header_t *)(packet + 1))->dst_port;
+    tcp = ip4_next_header(packet);
+    flow_key.src_port = tcp->src_port;
+    flow_key.dst_port = tcp->dst_port;
     break;
   default:
     flow_key.src_port = 0;
