@@ -12,7 +12,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <arpa/inet.h>
 #include <string.h>
+#include <time.h>
 #include <vlib/vlib.h>
 #include <vnet/ip/format.h>
 #include <vnet/ip/ip4_packet.h>
@@ -35,36 +37,45 @@ ipfix_main_t ipfix_main;
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
-  ip4_address_t* vec;
   clib_bihash_48_8_t flow_hash;
+  ipfix_ip4_flow_value_t *flow_records;
 } ipfix_trace_t;
 
+static void format_timestamp(u8 *s, va_list *args) {
+  time_t timestamp = va_arg (*args, time_t) / 1e3;
+  struct tm time;
 
-static void format_ipfix_ip4_flow_key(u8 *s, va_list *args) {
-  ipfix_ip4_flow_key_t *flow_key = va_arg (*args, ipfix_ip4_flow_key_t *);
+  gmtime_r(&timestamp, &time);
 
-  s = format(s, "[Flow key] src: %U, dst: %U, protocol: %d, src port: %U, dst port: %U\n",
-             format_ip4_address, &flow_key->src,
-             format_ip4_address, &flow_key->dst,
-             flow_key->protocol,
-             format_tcp_udp_port, flow_key->src_port,
-             format_tcp_udp_port, flow_key->dst_port);
-  return s;
-
+  s = format(s, "%04d-%02d-%02d %02d:%02d:%02d UTC",
+             time.tm_year + 1900, time.tm_mon + 1, time.tm_mday,
+             time.tm_hour, time.tm_min, time.tm_sec);
 }
 
-static void flow_hash_key_value_callback(clib_bihash_kv_48_8_t *keyvalue, void **string) {
-  u8 *s = *(u8 **)string;
-  //ipfix_ip4_flow_key_t flow_key;
-  //memcpy(&flow_key, &keyvalue.key, sizeof(ipfix_ip4_flow_key_t));
+static void format_ipfix_ip4_flow_key(u8 *s, va_list *args) {
+  ipfix_ip4_flow_value_t *flow_record = va_arg (*args, ipfix_ip4_flow_value_t*);
+  ipfix_ip4_flow_key_t flow_key = flow_record->flow_key;
 
-  *(u8 **)string = format(s, " %U ", format_ipfix_ip4_flow_key, &keyvalue->key);
+  s = format(s, "\n[Flow key] src: %U, dst: %U, protocol: %d, src port: %U, dst port: %U\n",
+             format_ip4_address, &flow_key.src,
+             format_ip4_address, &flow_key.dst,
+             flow_key.protocol,
+             format_tcp_udp_port, flow_key.src_port,
+             format_tcp_udp_port, flow_key.dst_port);
+  s = format(s, "[Flow record] start: %U, end: %U, count: %d, octets: %d\n",
+             format_timestamp, flow_record->flow_start,
+             format_timestamp, flow_record->flow_end,
+             ntohl(flow_record->packet_delta_count),
+             ntohl(flow_record->octet_delta_count));
+
+  return s;
+
 }
 
 /* packet trace+ format function */
 static u8 * format_ipfix_trace (u8 * s, va_list * args)
 {
-  ip4_address_t * elem;
+  ipfix_ip4_flow_value_t * record;
   CLIB_UNUSED (vlib_main_t * vm) = va_arg (*args, vlib_main_t *);
   CLIB_UNUSED (vlib_node_t * node) = va_arg (*args, vlib_node_t *);
   ipfix_trace_t * t = va_arg (*args, ipfix_trace_t *);
@@ -72,13 +83,10 @@ static u8 * format_ipfix_trace (u8 * s, va_list * args)
   s = format (s, "IPFIX: sw_if_index %d, next index %d\n",
               t->sw_if_index, t->next_index);
 
-  vec_validate(t->vec, 0);
-  vec_foreach(elem, t->vec) {
-    s = format (s, " ip: %U", format_ip4_address, elem);
+  vec_validate(t->flow_records, 0);
+  vec_foreach(record, t->flow_records) {
+    s = format (s, " %U", format_ipfix_ip4_flow_key, record);
   }
-
-
-  BV (clib_bihash_foreach_key_value_pair)(&t->flow_hash, flow_hash_key_value_callback, &s);
 
   s = format(s, "\n");
 
@@ -150,7 +158,22 @@ static void process_packet(ip4_header_t *packet) {
   status = clib_bihash_search_48_8(&im->flow_hash, &search, &result);
 
   if (status < 0) {
-    // create a record, put into search
+    ipfix_ip4_flow_value_t record;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+
+    memcpy(&record.flow_key, &search.key, sizeof(ipfix_ip4_flow_key_t));
+    record.flow_start = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+    record.flow_end = record.flow_start;
+    record.packet_delta_count = htonl(1);
+    record.octet_delta_count = htonl(ntohs(packet->length));
+
+    vec_add1(im->flow_records, record);
+    /* FIXME: this index calculation may not work when we delete
+       records later */
+    search.value = vec_len(im->flow_records) - 1;
+
     insert_packet_flow_hash(&search);
   } else {
     // update record
@@ -225,8 +248,6 @@ ipfix_node_fn (vlib_main_t * vm,
 
           pkts_swapped += 2;
           im->packet_counter += 2;
-          vec_add1(im->ip_vec, ip0->src_address);
-          vec_add1(im->ip_vec, ip1->src_address);
 
           process_packet(ip0);
           process_packet(ip1);
@@ -239,8 +260,8 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b0, sizeof (*t));
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
-                    t->vec = vec_dup(im->ip_vec);
                     t->flow_hash = im->flow_hash;
+                    t->flow_records = vec_dup(im->flow_records);
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED)
                   {
@@ -248,8 +269,8 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b1, sizeof (*t));
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
-                    t->vec = vec_dup(im->ip_vec);
                     t->flow_hash = im->flow_hash;
+                    t->flow_records = vec_dup(im->flow_records);
                   }
               }
 
@@ -285,7 +306,6 @@ ipfix_node_fn (vlib_main_t * vm,
 
           pkts_swapped += 1;
           im->packet_counter += 1;
-          vec_add1(im->ip_vec, ip0->src_address);
 
           process_packet(ip0);
 
@@ -295,8 +315,8 @@ ipfix_node_fn (vlib_main_t * vm,
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
-            t->vec = vec_dup(im->ip_vec);
             t->flow_hash = im->flow_hash;
+            t->flow_records = vec_dup(im->flow_records);
 	  }
 
           /* verify speculative enqueue, maybe switch current next frame */
