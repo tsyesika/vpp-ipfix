@@ -47,8 +47,8 @@ static void format_ipfix_ip4_flow_key(u8 *s, va_list *args) {
              format_ip4_address, &flow_key->src,
              format_ip4_address, &flow_key->dst,
              flow_key->protocol,
-             format_tcp_udp_port, &flow_key->src_port,
-             format_tcp_udp_port, &flow_key->dst_port);
+             format_tcp_udp_port, flow_key->src_port,
+             format_tcp_udp_port, flow_key->dst_port);
   return s;
 
 }
