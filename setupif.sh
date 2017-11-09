@@ -9,7 +9,7 @@ case "$1" in
      "remove")
          ip link set dev vpp1out down
          ip link set dev vpp1host down
-         ip del vpp1out;;
+         ip link del vpp1out;;
      "ping")
          ping -c 3 10.10.1.2;;
      *)
