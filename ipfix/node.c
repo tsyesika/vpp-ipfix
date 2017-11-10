@@ -54,7 +54,7 @@ static u8* format_timestamp(u8 *s, va_list *args) {
   return s;
 }
 
-static u8* format_ipfix_ip4_flow_key(u8 *s, va_list *args) {
+static u8* format_ipfix_ip4_flow(u8 *s, va_list *args) {
   ipfix_ip4_flow_value_t *flow_record = va_arg (*args, ipfix_ip4_flow_value_t*);
   ipfix_ip4_flow_key_t flow_key = flow_record->flow_key;
 
@@ -87,7 +87,7 @@ static u8 * format_ipfix_trace (u8 * s, va_list * args)
 
   vec_validate(t->flow_records, 0);
   vec_foreach(record, t->flow_records) {
-    s = format (s, " %U", format_ipfix_ip4_flow_key, record);
+    s = format (s, " %U", format_ipfix_ip4_flow, record);
   }
 
   s = format(s, "\n");
