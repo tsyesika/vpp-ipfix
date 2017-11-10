@@ -41,7 +41,7 @@ typedef struct {
   ipfix_ip4_flow_value_t *flow_records;
 } ipfix_trace_t;
 
-static void format_timestamp(u8 *s, va_list *args) {
+static u8* format_timestamp(u8 *s, va_list *args) {
   time_t timestamp = va_arg (*args, time_t) / 1e3;
   struct tm time;
 
@@ -50,9 +50,11 @@ static void format_timestamp(u8 *s, va_list *args) {
   s = format(s, "%04d-%02d-%02d %02d:%02d:%02d UTC",
              time.tm_year + 1900, time.tm_mon + 1, time.tm_mday,
              time.tm_hour, time.tm_min, time.tm_sec);
+
+  return s;
 }
 
-static void format_ipfix_ip4_flow_key(u8 *s, va_list *args) {
+static u8* format_ipfix_ip4_flow_key(u8 *s, va_list *args) {
   ipfix_ip4_flow_value_t *flow_record = va_arg (*args, ipfix_ip4_flow_value_t*);
   ipfix_ip4_flow_key_t flow_key = flow_record->flow_key;
 
