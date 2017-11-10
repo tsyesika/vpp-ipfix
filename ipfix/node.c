@@ -32,6 +32,9 @@
 #define TCP_PROTOCOL 6
 #define UDP_PROTOCOL 17
 
+/* Amount of time between each run of the process node (in seconds) */
+#define PROCESS_POLL_PERIOD 10.0
+
 ipfix_main_t ipfix_main;
 
 typedef struct {
@@ -159,11 +162,11 @@ static void process_packet(ip4_header_t *packet) {
 
   status = clib_bihash_search_48_8(&im->flow_hash, &search, &result);
 
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+
   if (status < 0) {
     ipfix_ip4_flow_value_t record;
-
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
 
     memcpy(&record.flow_key, &search.key, sizeof(ipfix_ip4_flow_key_t));
     record.flow_start = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
@@ -179,6 +182,11 @@ static void process_packet(ip4_header_t *packet) {
     insert_packet_flow_hash(&search);
   } else {
     // update record
+    u32 record_idx = result.value;
+    ipfix_ip4_flow_value_t *record = vec_elt_at_index(im->flow_records, record_idx);
+    record->flow_end = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+    record->packet_delta_count = htonl(ntohl(record->packet_delta_count) + 1);
+    record->octet_delta_count = htonl(ntohl(record->octet_delta_count) + ntohs(packet->length));
   }
 }
 
@@ -334,6 +342,67 @@ ipfix_node_fn (vlib_main_t * vm,
                                IPFIX_ERROR_SWAPPED, pkts_swapped);
   return frame->n_vectors;
 }
+
+static uword ipfix_process_records_fn(vlib_main_t * vm,
+                                   vlib_node_runtime_t * node,
+                                   vlib_frame_t * frame)
+{
+  f64 poll_time_remaining = PROCESS_POLL_PERIOD;
+  uword event_type, *event_data;
+  ipfix_main_t * im = &ipfix_main;
+  ipfix_ip4_flow_value_t *record;
+  u64 idle_flow_timeout = 10 * 1e3;
+  u64 active_flow_timeout = 30 * 1e3;
+
+  while (1) {
+    poll_time_remaining = vlib_process_wait_for_event_or_clock(vm, poll_time_remaining);
+    struct timespec current_time_clock;
+    clock_gettime(CLOCK_REALTIME, &current_time_clock);
+    u64 current_time = current_time_clock.tv_sec * 1e3 + current_time_clock.tv_nsec / 1e6;
+    u64 record_idx = 0;
+
+    vec_foreach_index(record_idx, im->flow_records) {
+      clib_warning("Vector length: %d", vec_len(im->flow_records));
+
+      record = vec_elt_at_index(im->flow_records, record_idx);
+
+      if ((record->flow_end + idle_flow_timeout) < current_time) {
+        clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip4_flow, record);
+        vec_add1(im->expired_records, *record);
+        vec_del1(im->flow_records, record_idx);
+
+        clib_bihash_kv_48_8_t keyvalue;
+        memset(&keyvalue, 0, sizeof(clib_bihash_kv_48_8_t));
+        memcpy(&keyvalue.key, &record->flow_key, sizeof(ipfix_ip4_flow_key_t));
+        if (clib_bihash_add_del_48_8(&im->flow_hash, &keyvalue, 0) != 0) {
+          clib_warning("Warning: Could not remove flow form hash.");
+        };
+
+      } else if ((record->flow_start + active_flow_timeout) < current_time) {
+        clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record);
+        vec_add1(im->expired_records, *record);
+
+        record->flow_start = current_time;
+        record->flow_end = current_time;
+        record->packet_delta_count = 0;
+        record->octet_delta_count = 0;
+      }
+    };
+
+    if (vlib_process_suspend_time_is_zero(poll_time_remaining)) {
+      poll_time_remaining = PROCESS_POLL_PERIOD;
+    }
+  }
+  return 0;
+}
+
+
+VLIB_REGISTER_NODE (ipfix_process_records) = {
+  .function = ipfix_process_records_fn,
+  .name = "ipfix-record-processing",
+  .type = VLIB_NODE_TYPE_PROCESS,
+};
+
 
 VLIB_REGISTER_NODE (ipfix_node) = {
   .function = ipfix_node_fn,

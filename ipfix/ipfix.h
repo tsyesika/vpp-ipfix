@@ -55,6 +55,9 @@ typedef struct {
     /* vector of flow records */
     ipfix_ip4_flow_value_t * flow_records;
 
+  /* vector of expired flows to export */
+  ipfix_ip4_flow_value_t * expired_records;
+
     /* convenience */
     vnet_main_t * vnet_main;
 } ipfix_main_t;
