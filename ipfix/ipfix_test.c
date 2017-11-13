@@ -64,7 +64,7 @@ typedef struct {
 ipfix_test_main_t ipfix_test_main;
 
 #define foreach_standard_reply_retval_handler   \
-_(ipfix_macswap_enable_disable_reply)
+_(ipfix_flow_meter_enable_disable_reply)
 
 #define _(n)                                            \
     static void vl_api_##n##_t_handler                  \
@@ -87,15 +87,15 @@ foreach_standard_reply_retval_handler;
  * we just generated
  */
 #define foreach_vpe_api_reply_msg                                       \
-_(IPFIX_MACSWAP_ENABLE_DISABLE_REPLY, ipfix_macswap_enable_disable_reply)
+_(IPFIX_FLOW_METER_ENABLE_DISABLE_REPLY, ipfix_flow_meter_enable_disable_reply)
 
 
-static int api_ipfix_macswap_enable_disable (vat_main_t * vam)
+static int api_ipfix_flow_meter_enable_disable (vat_main_t * vam)
 {
     unformat_input_t * i = vam->input;
     int enable_disable = 1;
     u32 sw_if_index = ~0;
-    vl_api_ipfix_macswap_enable_disable_t * mp;
+    vl_api_ipfix_flow_meter_enable_disable_t * mp;
     int ret;
 
     /* Parse args required to build the message */
@@ -116,7 +116,7 @@ static int api_ipfix_macswap_enable_disable (vat_main_t * vam)
     }
     
     /* Construct the API message */
-    M(IPFIX_MACSWAP_ENABLE_DISABLE, mp);
+    M(IPFIX_FLOW_METER_ENABLE_DISABLE, mp);
     mp->sw_if_index = ntohl (sw_if_index);
     mp->enable_disable = enable_disable;
 
@@ -133,7 +133,7 @@ static int api_ipfix_macswap_enable_disable (vat_main_t * vam)
  * and that the data plane plugin processes
  */
 #define foreach_vpe_api_msg \
-_(ipfix_macswap_enable_disable, "<intfc> [disable]")
+_(ipfix_flow_meter_enable_disable, "<intfc> [disable]")
 
 static void ipfix_api_hookup (vat_main_t *vam)
 {

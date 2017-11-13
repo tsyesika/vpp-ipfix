@@ -2,4 +2,4 @@ create host-interface name vpp1out
 set int ip address host-vpp1out 10.10.1.2/24
 set int state host-vpp1out up
 trace add af-packet-input 30
-ipfix macswap host-vpp1out
+ipfix flow-meter host-vpp1out

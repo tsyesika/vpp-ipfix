@@ -55,7 +55,7 @@
 /* List of message types that this plugin understands */
 
 #define foreach_ipfix_plugin_api_msg                           \
-_(IPFIX_MACSWAP_ENABLE_DISABLE, ipfix_macswap_enable_disable)
+_(IPFIX_FLOW_METER_ENABLE_DISABLE, ipfix_flow_meter_enable_disable)
 
 /* *INDENT-OFF* */
 VLIB_PLUGIN_REGISTER () = {
@@ -65,12 +65,12 @@ VLIB_PLUGIN_REGISTER () = {
 /* *INDENT-ON* */
 
 /**
- * @brief Enable/disable the macswap plugin. 
+ * @brief Enable/disable the flow_meter plugin.
  *
  * Action function shared between message handler and debug CLI.
  */
 
-int ipfix_macswap_enable_disable (ipfix_main_t * sm, u32 sw_if_index,
+int ipfix_flow_meter_enable_disable (ipfix_main_t * sm, u32 sw_if_index,
                                    int enable_disable)
 {
   vnet_sw_interface_t * sw;
@@ -93,7 +93,7 @@ int ipfix_macswap_enable_disable (ipfix_main_t * sm, u32 sw_if_index,
 }
 
 static clib_error_t *
-macswap_enable_disable_command_fn (vlib_main_t * vm,
+flow_meter_enable_disable_command_fn (vlib_main_t * vm,
                                    unformat_input_t * input,
                                    vlib_cli_command_t * cmd)
 {
@@ -116,7 +116,7 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
   if (sw_if_index == ~0)
     return clib_error_return (0, "Please specify an interface...");
     
-  rv = ipfix_macswap_enable_disable (sm, sw_if_index, enable_disable);
+  rv = ipfix_flow_meter_enable_disable (sm, sw_if_index, enable_disable);
 
   switch(rv) {
   case 0:
@@ -132,36 +132,36 @@ macswap_enable_disable_command_fn (vlib_main_t * vm,
     break;
 
   default:
-    return clib_error_return (0, "ipfix_macswap_enable_disable returned %d",
+    return clib_error_return (0, "ipfix_flow_meter_enable_disable returned %d",
                               rv);
   }
   return 0;
 }
 
 /**
- * @brief CLI command to enable/disable the ipfix macswap plugin.
+ * @brief CLI command to enable/disable the ipfix plugin.
  */
 VLIB_CLI_COMMAND (sr_content_command, static) = {
-    .path = "ipfix macswap",
+    .path = "ipfix flow-meter",
     .short_help = 
-    "ipfix macswap <interface-name> [disable]",
-    .function = macswap_enable_disable_command_fn,
+    "ipfix flow-meter <interface-name> [disable]",
+    .function = flow_meter_enable_disable_command_fn,
 };
 
 /**
  * @brief Plugin API message handler.
  */
-static void vl_api_ipfix_macswap_enable_disable_t_handler
-(vl_api_ipfix_macswap_enable_disable_t * mp)
+static void vl_api_ipfix_flow_meter_enable_disable_t_handler
+(vl_api_ipfix_flow_meter_enable_disable_t * mp)
 {
-  vl_api_ipfix_macswap_enable_disable_reply_t * rmp;
+  vl_api_ipfix_flow_meter_enable_disable_reply_t * rmp;
   ipfix_main_t * sm = &ipfix_main;
   int rv;
 
-  rv = ipfix_macswap_enable_disable (sm, ntohl(mp->sw_if_index), 
-                                      (int) (mp->enable_disable));
+  rv = ipfix_flow_meter_enable_disable (sm, ntohl(mp->sw_if_index),
+                                        (int) (mp->enable_disable));
   
-  REPLY_MACRO(VL_API_IPFIX_MACSWAP_ENABLE_DISABLE_REPLY);
+  REPLY_MACRO(VL_API_IPFIX_FLOW_METER_ENABLE_DISABLE_REPLY);
 }
 
 /**
