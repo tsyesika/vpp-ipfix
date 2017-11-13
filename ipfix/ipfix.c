@@ -215,9 +215,6 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
-  /* Initialize IP vector */
-  sm->ip_vec = 0;
-
   /* Initialize flow records vector */
   sm->flow_records = 0;
 

@@ -197,7 +197,6 @@ ipfix_node_fn (vlib_main_t * vm,
 {
   u32 n_left_from, * from, * to_next;
   ipfix_next_t next_index;
-  u32 pkts_swapped = 0;
   ipfix_main_t * im = &ipfix_main;
 
   from = vlib_frame_vector_args (frame);
@@ -250,9 +249,6 @@ ipfix_node_fn (vlib_main_t * vm,
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
           sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
-
-          pkts_swapped += 2;
-          im->packet_counter += 2;
 
           process_packet(ip0);
           process_packet(ip1);
@@ -307,9 +303,6 @@ ipfix_node_fn (vlib_main_t * vm,
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
-          pkts_swapped += 1;
-          im->packet_counter += 1;
-
           process_packet(ip0);
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
@@ -331,8 +324,6 @@ ipfix_node_fn (vlib_main_t * vm,
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  vlib_node_increment_counter (vm, ipfix_node.index,
-                               IPFIX_ERROR_SWAPPED, pkts_swapped);
   return frame->n_vectors;
 }
 
