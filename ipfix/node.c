@@ -219,8 +219,6 @@ ipfix_node_fn (vlib_main_t * vm,
           u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 next1 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0, sw_if_index1;
-          u8 tmp0[6], tmp1[6];
-          ethernet_header_t *en0, *en1;
 	  ip4_header_t *ip0, *ip1;
           u32 bi0, bi1;
 	  vlib_buffer_t * b0, * b1;
@@ -296,8 +294,6 @@ ipfix_node_fn (vlib_main_t * vm,
 	  vlib_buffer_t * b0;
           u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0;
-          u8 tmp0[6];
-          ethernet_header_t *en0;
 	  ip4_header_t *ip0;
 
           /* speculatively enqueue b0 to the current next frame */
@@ -348,7 +344,6 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
                                    vlib_frame_t * frame)
 {
   f64 poll_time_remaining = PROCESS_POLL_PERIOD;
-  uword event_type, *event_data;
   ipfix_main_t * im = &ipfix_main;
   ipfix_ip4_flow_value_t *record;
   u64 idle_flow_timeout = 10 * 1e3;
