@@ -200,9 +200,6 @@ ipfix_node_fn (vlib_main_t * vm,
   u32 pkts_swapped = 0;
   ipfix_main_t * im = &ipfix_main;
 
-  // Turn debugging on - remove me once fixed.
-  node->flags = VLIB_NODE_FLAG_TRACE;
-
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
   next_index = node->cached_next_index;
