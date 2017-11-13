@@ -173,7 +173,7 @@ ipfix_plugin_api_hookup (vlib_main_t *vm)
   ipfix_main_t * sm = &ipfix_main;
 #define _(N,n)                                                  \
     vl_msg_api_set_handlers((VL_API_##N + sm->msg_id_base),     \
-                           #n,					\
+                           #n,                                  \
                            vl_api_##n##_t_handler,              \
                            vl_noop_handler,                     \
                            vl_api_##n##_t_endian,               \

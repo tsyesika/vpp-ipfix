@@ -102,8 +102,8 @@ static int api_ipfix_flow_meter_enable_disable (vat_main_t * vam)
     while (unformat_check_input (i) != UNFORMAT_END_OF_INPUT) {
         if (unformat (i, "%U", unformat_sw_if_index, vam, &sw_if_index))
             ;
-	else if (unformat (i, "sw_if_index %d", &sw_if_index))
-	    ;
+        else if (unformat (i, "sw_if_index %d", &sw_if_index))
+            ;
         else if (unformat (i, "disable"))
             enable_disable = 0;
         else
