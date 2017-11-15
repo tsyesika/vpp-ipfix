@@ -192,16 +192,12 @@ static void process_packet(ip4_header_t *packet) {
 
 static uword
 ipfix_node_fn (vlib_main_t * vm,
-		  vlib_node_runtime_t * node,
-		  vlib_frame_t * frame)
+                  vlib_node_runtime_t * node,
+                  vlib_frame_t * frame)
 {
   u32 n_left_from, * from, * to_next;
   ipfix_next_t next_index;
-  u32 pkts_swapped = 0;
   ipfix_main_t * im = &ipfix_main;
-
-  // Turn debugging on - remove me once fixed.
-  node->flags = VLIB_NODE_FLAG_TRACE;
 
   from = vlib_frame_vector_args (frame);
   n_left_from = frame->n_vectors;
@@ -212,52 +208,47 @@ ipfix_node_fn (vlib_main_t * vm,
       u32 n_left_to_next;
 
       vlib_get_next_frame (vm, node, next_index,
-			   to_next, n_left_to_next);
+                           to_next, n_left_to_next);
 
       while (n_left_from >= 4 && n_left_to_next >= 2)
-	{
+        {
           u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 next1 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0, sw_if_index1;
-          u8 tmp0[6], tmp1[6];
-          ethernet_header_t *en0, *en1;
-	  ip4_header_t *ip0, *ip1;
+          ip4_header_t *ip0, *ip1;
           u32 bi0, bi1;
-	  vlib_buffer_t * b0, * b1;
+          vlib_buffer_t * b0, * b1;
 
-	  /* Prefetch next iteration. */
-	  {
-	    vlib_buffer_t * p2, * p3;
+          /* Prefetch next iteration. */
+          {
+            vlib_buffer_t * p2, * p3;
 
-	    p2 = vlib_get_buffer (vm, from[2]);
-	    p3 = vlib_get_buffer (vm, from[3]);
+            p2 = vlib_get_buffer (vm, from[2]);
+            p3 = vlib_get_buffer (vm, from[3]);
 
-	    vlib_prefetch_buffer_header (p2, LOAD);
-	    vlib_prefetch_buffer_header (p3, LOAD);
+            vlib_prefetch_buffer_header (p2, LOAD);
+            vlib_prefetch_buffer_header (p3, LOAD);
 
-	    CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
-	    CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
-	  }
+            CLIB_PREFETCH (p2->data, CLIB_CACHE_LINE_BYTES, STORE);
+            CLIB_PREFETCH (p3->data, CLIB_CACHE_LINE_BYTES, STORE);
+          }
 
           /* speculatively enqueue b0 and b1 to the current next frame */
-	  to_next[0] = bi0 = from[0];
-	  to_next[1] = bi1 = from[1];
-	  from += 2;
-	  to_next += 2;
-	  n_left_from -= 2;
-	  n_left_to_next -= 2;
+          to_next[0] = bi0 = from[0];
+          to_next[1] = bi1 = from[1];
+          from += 2;
+          to_next += 2;
+          n_left_from -= 2;
+          n_left_to_next -= 2;
 
-	  b0 = vlib_get_buffer (vm, bi0);
-	  b1 = vlib_get_buffer (vm, bi1);
+          b0 = vlib_get_buffer (vm, bi0);
+          b1 = vlib_get_buffer (vm, bi1);
 
           ip0 = vlib_buffer_get_current (b0);
           ip1 = vlib_buffer_get_current (b1);
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
           sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
-
-          pkts_swapped += 2;
-          im->packet_counter += 2;
 
           process_packet(ip0);
           process_packet(ip1);
@@ -291,31 +282,26 @@ ipfix_node_fn (vlib_main_t * vm,
         }
 
       while (n_left_from > 0 && n_left_to_next > 0)
-	{
+        {
           u32 bi0;
-	  vlib_buffer_t * b0;
+          vlib_buffer_t * b0;
           u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0;
-          u8 tmp0[6];
-          ethernet_header_t *en0;
-	  ip4_header_t *ip0;
+          ip4_header_t *ip0;
 
           /* speculatively enqueue b0 to the current next frame */
-	  bi0 = from[0];
-	  to_next[0] = bi0;
-	  from += 1;
-	  to_next += 1;
-	  n_left_from -= 1;
-	  n_left_to_next -= 1;
+          bi0 = from[0];
+          to_next[0] = bi0;
+          from += 1;
+          to_next += 1;
+          n_left_from -= 1;
+          n_left_to_next -= 1;
 
-	  b0 = vlib_get_buffer (vm, bi0);
+          b0 = vlib_get_buffer (vm, bi0);
 
           ip0 = vlib_buffer_get_current (b0);
 
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
-
-          pkts_swapped += 1;
-          im->packet_counter += 1;
 
           process_packet(ip0);
 
@@ -327,19 +313,17 @@ ipfix_node_fn (vlib_main_t * vm,
             t->next_index = next0;
             t->flow_hash = im->flow_hash;
             t->flow_records = vec_dup(im->flow_records);
-	  }
+          }
 
           /* verify speculative enqueue, maybe switch current next frame */
-	  vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
-					   to_next, n_left_to_next,
-					   bi0, next0);
-	}
+          vlib_validate_buffer_enqueue_x1 (vm, node, next_index,
+                                           to_next, n_left_to_next,
+                                           bi0, next0);
+        }
 
       vlib_put_next_frame (vm, node, next_index, n_left_to_next);
     }
 
-  vlib_node_increment_counter (vm, ipfix_node.index,
-                               IPFIX_ERROR_SWAPPED, pkts_swapped);
   return frame->n_vectors;
 }
 
@@ -348,7 +332,6 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
                                    vlib_frame_t * frame)
 {
   f64 poll_time_remaining = PROCESS_POLL_PERIOD;
-  uword event_type, *event_data;
   ipfix_main_t * im = &ipfix_main;
   ipfix_ip4_flow_value_t *record;
   u64 idle_flow_timeout = 10 * 1e3;

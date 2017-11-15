@@ -16,7 +16,7 @@
 
 /* Define a simple binary API to control the feature */
 
-autoreply define ipfix_macswap_enable_disable {
+autoreply define ipfix_flow_meter_enable_disable {
     /* Client identifier, set from api_main.my_client_index */
     u32 client_index;
 

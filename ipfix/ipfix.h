@@ -44,12 +44,6 @@ typedef struct {
     /* API message ID base */
     u16 msg_id_base;
 
-    /* Counter for packets */
-    u32 packet_counter;
-
-    /* IP -> count */
-    ip4_address_t * ip_vec;
-
     clib_bihash_48_8_t flow_hash;
 
     /* vector of flow records */
