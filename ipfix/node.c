@@ -327,6 +327,72 @@ ipfix_node_fn (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
+static void ipfix_send_packet(vlib_main_t * vm)
+{
+  vlib_frame_t * nf;
+  vlib_node_t * next_node;
+  u32 * to_next;
+  vlib_buffer_t * b0;
+  ethernet_header_t * en0;
+  ip4_header_t * ip0;
+  udp_header_t * udp0;
+  u32 * buffers = NULL;
+  int num_buffers;
+
+  /* FIXME: why would the next node be ip4-lookup? */
+  next_node = vlib_get_node_by_name(vm, (u8 *) "ip4-lookup");
+  nf = vlib_get_frame_to_node(vm, next_node->index);
+  nf->n_vectors = 1;
+  to_next = vlib_frame_vector_args(nf);
+
+  /* FIXME: how much does this allocate? */
+  /* allocate a buffer, get the index for it into buffers */
+  num_buffers = vlib_buffer_alloc(vm, buffers, 1);
+  ASSERT(num_buffers > 0);
+
+  /* get the actual buffer pointer from our buffer index */
+  b0 = vlib_get_buffer(vm, buffers[0]);
+  en0 = (ethernet_header_t*) b0;
+
+  b0->current_data = 0;
+  b0->current_length = sizeof(ethernet_header_t) + sizeof(ip4_header_t);
+  b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
+
+  /* hardcode all info with some junk for now */
+  en0->src_address[0] = 0;
+  en0->src_address[1] = 1;
+  en0->src_address[2] = 2;
+  en0->src_address[3] = 3;
+  en0->src_address[4] = 4;
+  en0->src_address[5] = 5;
+
+  en0->dst_address[0] = 5;
+  en0->dst_address[1] = 4;
+  en0->dst_address[2] = 3;
+  en0->dst_address[3] = 2;
+  en0->dst_address[4] = 1;
+  en0->dst_address[5] = 0;
+
+  en0->type = clib_byte_swap_u16(0x0800);
+
+  ip0 = (ip4_header_t *)(b0 + 1);
+  ip0->ip_version_and_header_length = 0x45;
+  ip0->tos = 0;
+  ip0->length = clib_byte_swap_u16(20);
+  ip0->fragment_id = 0;
+  ip0->flags_and_fragment_offset = 0;
+  ip0->ttl = 64;
+  ip0->protocol = 17;
+  ip0->checksum = 0;
+  ip0->src_address.data_u32 = 0;
+  ip0->dst_address.data_u32 = 0;
+
+  /* set to_next index to the buffer index we allocated */
+  *to_next = buffers[0];
+  /* ... */
+  vlib_put_frame_to_node(vm, next_node->index, nf);
+}
+
 static uword ipfix_process_records_fn(vlib_main_t * vm,
                                    vlib_node_runtime_t * node,
                                    vlib_frame_t * frame)
@@ -361,6 +427,7 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
           clib_warning("Warning: Could not remove flow form hash.");
         };
 
+        ipfix_send_packet(vm);
       } else if ((record->flow_start + active_flow_timeout) < current_time) {
         clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record);
         vec_add1(im->expired_records, *record);
