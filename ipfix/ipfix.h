@@ -23,6 +23,7 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 #include <vppinfra/vec.h>
+#include <ipfix/netflow_v10.h>
 
 typedef struct {
   ip4_address_t src;
@@ -51,6 +52,9 @@ typedef struct {
 
   /* vector of expired flows to export */
   ipfix_ip4_flow_value_t * expired_records;
+
+  /* vector of IPFIX data packets to be transmitted */
+  netflow_v10_data_packet_t *data_packets;
 
   /* convenience */
   vnet_main_t * vnet_main;

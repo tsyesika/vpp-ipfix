@@ -42,6 +42,7 @@ typedef struct {
 } netflow_v10_data_record_t;
 
 typedef struct {
+  u16 id;
   netflow_v10_data_record_t *fields;
 } netflow_v10_data_record_set_t;
 
