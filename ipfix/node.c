@@ -92,6 +92,16 @@ static void ipfix_make_v10_template(netflow_v10_template_t *template)
   flow_end.size = sizeof(u64);
   vec_add1(set.fields, flow_end);
 
+  netflow_v10_field_specifier_t octet_count;
+  octet_count.identifier = octetDeltaCount;
+  octet_count.size = sizeof(u64);
+  vec_add1(set.fields, octet_count);
+
+  netflow_v10_field_specifier_t packet_count;
+  packet_count.identifier = packetDeltaCount;
+  packet_count.size = sizeof(u64);
+  vec_add1(set.fields, packet_count);
+
   vec_add1(template->sets, set);
 }
 
@@ -112,13 +122,13 @@ static u8* format_ipfix_ip4_flow(u8 *s, va_list *args) {
   ipfix_ip4_flow_value_t *flow_record = va_arg (*args, ipfix_ip4_flow_value_t*);
   ipfix_ip4_flow_key_t flow_key = flow_record->flow_key;
 
-  s = format(s, "\n[Flow key] src: %U, dst: %U, protocol: %d, src port: %U, dst port: %U\n",
+  s = format(s, "\n[Flow key] src: %U, dst: %U, protocol: %u, src port: %U, dst port: %U\n",
              format_ip4_address, &flow_key.src,
              format_ip4_address, &flow_key.dst,
              flow_key.protocol,
              format_tcp_udp_port, flow_key.src_port,
              format_tcp_udp_port, flow_key.dst_port);
-  s = format(s, "[Flow record] start: %U, end: %U, count: %d, octets: %d\n",
+  s = format(s, "[Flow record] start: %U, end: %U, count: %u, octets: %u\n",
              format_timestamp, flow_record->flow_start,
              format_timestamp, flow_record->flow_end,
              ntohl(flow_record->packet_delta_count),
@@ -133,7 +143,7 @@ static u8* format_netflow_v10_template(u8 *s, va_list *args) {
   s = format(s, "Netflow V10 Template:\n");
   vec_foreach(set, template->sets) {
     netflow_v10_field_specifier_t *field;
-    s = format(s, "\tSet %d:\n", set->id);
+    s = format(s, "\tSet %u:\n", set->id);
     vec_foreach(field, set->fields) {
       s = format(s, "\t\t");
 
@@ -142,28 +152,34 @@ static u8* format_netflow_v10_template(u8 *s, va_list *args) {
         s = format(s, "protocolIdentifier (%d)\t\t", field->identifier);
         break;
       case sourceTransportPort:
-        s = format(s, "sourceTransportPort (%d)\t\t", field->identifier);
+        s = format(s, "sourceTransportPort (%u)\t\t", field->identifier);
         break;
       case sourceIPv4Address:
-        s = format(s, "sourceIPv4Address (%d)\t\t", field->identifier);
+        s = format(s, "sourceIPv4Address (%u)\t\t", field->identifier);
         break;
       case destinationTransportPort:
-        s = format(s, "destinationTransportPort (%d)\t", field->identifier);
+        s = format(s, "destinationTransportPort (%u)\t", field->identifier);
         break;
       case destinationIPv4Address:
-        s = format(s, "destinationIPv4Address (%d)\t", field->identifier);
+        s = format(s, "destinationIPv4Address (%u)\t", field->identifier);
         break;
       case flowStartMilliseconds:
-        s = format(s, "flowStartMilliseconds (%d)\t", field->identifier);
+        s = format(s, "flowStartMilliseconds (%u)\t", field->identifier);
         break;
       case flowEndMilliseconds:
-        s = format(s, "flowEndMilliseconds (%d)\t", field->identifier);
+        s = format(s, "flowEndMilliseconds (%u)\t", field->identifier);
+        break;
+      case octetDeltaCount:
+        s = format(s, "octetDeltaCount (%u)\t\t", field->identifier);
+        break;
+      case packetDeltaCount:
+        s = format(s, "packetDeltaCount (%u)\t\t", field->identifier);
         break;
       default:
-        s = format(s, "-- unsupported -- (%d)\t\t", field->identifier);
+        s = format(s, "-- unsupported -- (%u)\t\t", field->identifier);
       };
 
-      s = format(s, "octets: %d\t\tenterprise number: %d\n",
+      s = format(s, "octets: %u\t\tenterprise number: %u\n",
                  field->size, field->enterprise_number);
     };
   };
@@ -188,8 +204,7 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   vec_foreach_index(set_idx, template.sets) {
       template_set = vec_elt_at_index(template.sets, set_idx);
       data_set = vec_elt_at_index(packet->sets, set_idx);
-      format(s, "\tSet %d:\n", data_set->id);
-
+      format(s, "\tSet %u:\n", data_set->id);
 
       u64 field_idx;
       vec_foreach_index(field_idx, template_set->fields) {
@@ -204,19 +219,25 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
           s = format(s, "\t\t%U", format_ip4_address, record->data);
           break;
         case protocolIdentifier:
-          s = format(s, "\t\t%d", record->data);
+          s = format(s, "\t\t%u", *record->data);
           break;
         case sourceTransportPort:
-          s = format(s, "\t\t%U", format_tcp_udp_port, record->data);
+          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)record->data);
           break;
         case destinationTransportPort:
-          s = format(s, "\t\t%U", format_tcp_udp_port, record->data);
+          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)record->data);
           break;
         case flowStartMilliseconds:
-          s = format(s, "\t\t%U", format_timestamp);
+          s = format(s, "\t\t%U", format_timestamp, *(u64 *)record->data);
           break;
         case flowEndMilliseconds:
-          s = format(s, "\t\t%U", format_timestamp);
+          s = format(s, "\t\t%U", format_timestamp, *(u64 *)record->data);
+          break;
+        case octetDeltaCount:
+          s = format(s, "\t\t%u", *(u64 *)record->data);
+          break;
+        case packetDeltaCount:
+          s = format(s, "\t\t%u", *(u64 *)record->data);
         default:
           ASSERT(0); // This shouldn't happen - makes the packet unreadable.
         }
@@ -520,32 +541,49 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
       data_record.data = malloc(field->size);
       switch (field->identifier) {
       case sourceIPv4Address:
+        clib_warning("Writing sourceIPv4Address: %U\n", format_ip4_address, &record->flow_key.src);
         ASSERT(field->size == sizeof(ip4_address_t));
         memcpy(data_record.data, &record->flow_key.src, field->size);
         break;
       case destinationIPv4Address:
+        clib_warning("Writing destinationIPv4Address: %U\n", format_ip4_address, &record->flow_key.dst);
         ASSERT(field->size == sizeof(ip4_address_t));
         memcpy(data_record.data, &record->flow_key.dst, field->size);
         break;
       case protocolIdentifier:
+        clib_warning("Writing protocolIdentifier: %d\n", record->flow_key.protocol);
         ASSERT(field->size == sizeof(u8));
         memcpy(data_record.data, &record->flow_key.protocol, field->size);
         break;
       case sourceTransportPort:
+        clib_warning("Writing sourceTransportPort: %U\n", format_tcp_udp_port, record->flow_key.src_port);
         ASSERT(field->size == sizeof(u16));
         memcpy(data_record.data, &record->flow_key.src_port, field->size);
         break;
       case destinationTransportPort:
+        clib_warning("Writing destinationTransportPort: %U\n", format_tcp_udp_port, record->flow_key.dst_port);
         ASSERT(field->size == sizeof(u16));
         memcpy(data_record.data, &record->flow_key.dst_port, field->size);
         break;
       case flowStartMilliseconds:
+        clib_warning("Writing flowStartMilliseconds: %U\n", format_timestamp, record->flow_start);
         ASSERT(field->size == sizeof(u64));
         memcpy(data_record.data, &record->flow_start, field->size);
         break;
       case flowEndMilliseconds:
+        clib_warning("Writing flowEndMilliseconds: %U\n", format_timestamp, record->flow_end);
         ASSERT(field->size == sizeof(u64));
         memcpy(data_record.data, &record->flow_end, field->size);
+        break;
+      case octetDeltaCount:
+        clib_warning("Writing octetDeltaCount: %u\n", record->octet_delta_count);
+        ASSERT(field->size == sizeof(u64));
+        memcpy(data_record.data, &record->octet_delta_count, field->size);
+        break;
+      case packetDeltaCount:
+        clib_warning("Writing packetDeltaCount: %u\n", record->packet_delta_count);
+        ASSERT(field->size == sizeof(u64));
+        memcpy(data_record.data, &record->packet_delta_count, field->size);
         break;
       default:
         ASSERT(0); // Error. We don't know what this type is!
@@ -610,8 +648,12 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
     };
 
     netflow_v10_data_packet_t *packet;
-    vec_foreach(packet, im->data_packets) {
+    u64 packet_idx;
+    vec_foreach_index(packet_idx, im->data_packets) {
+      packet = vec_elt_at_index(im->data_packets, packet_idx);
       clib_warning("%U", format_netflow_v10_data_packet, packet);
+      ipfix_free_v10_packet(packet);
+      vec_del1(im->data_packets, packet_idx);
     };
 
     if (vlib_process_suspend_time_is_zero(poll_time_remaining)) {

@@ -1,6 +1,8 @@
 #include <vnet/vnet.h>
 
 // IPFIX fields. TODO: Parse from CSV file.
+#define octetDeltaCount 1
+#define packetDeltaCount 2
 #define protocolIdentifier 4
 #define sourceTransportPort 7
 #define sourceIPv4Address 8
