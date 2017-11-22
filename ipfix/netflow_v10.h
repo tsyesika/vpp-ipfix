@@ -28,6 +28,16 @@ typedef struct {
 
 typedef struct {
   u16 id;
+  u16 length;
+} netflow_v10_set_header_t;
+
+typedef struct {
+  netflow_v10_set_header_t header;
+  u8 *data;
+} netflow_v10_data_set_t;
+
+typedef struct {
+  u16 id;
 
   /* Vector of fields */
   netflow_v10_field_specifier_t *fields;
@@ -44,11 +54,6 @@ typedef struct {
 } netflow_v10_data_record_t;
 
 typedef struct {
-  u16 id;
-  netflow_v10_data_record_t *fields;
-} netflow_v10_data_record_set_t;
-
-typedef struct {
   netflow_v10_header_t header;
-  netflow_v10_data_record_set_t *sets;
+  netflow_v10_data_set_t *sets;
 } netflow_v10_data_packet_t;

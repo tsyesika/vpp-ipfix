@@ -190,9 +190,8 @@ static u8* format_netflow_v10_template(u8 *s, va_list *args) {
 static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   netflow_v10_data_packet_t *packet = va_arg (*args, netflow_v10_data_packet_t*);
   netflow_v10_template_set_t *template_set;
-  netflow_v10_data_record_set_t *data_set;
+  netflow_v10_data_set_t *data_set;
   netflow_v10_field_specifier_t *field_spec;
-  netflow_v10_data_record_t *record;
   netflow_v10_template_t template;
   ipfix_make_v10_template(&template);
 
@@ -201,46 +200,49 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   // The data packet is build to mirror the template with data, It _should_ be
   // safe to use the same indices.
   u64 set_idx;
+  void *data;
   vec_foreach_index(set_idx, template.sets) {
       template_set = vec_elt_at_index(template.sets, set_idx);
       data_set = vec_elt_at_index(packet->sets, set_idx);
-      format(s, "\tSet %u:\n", data_set->id);
+      format(s, "\tSet %u:\n", template_set->id);
 
+      data = data_set->data;
       u64 field_idx;
       vec_foreach_index(field_idx, template_set->fields) {
         field_spec = vec_elt_at_index(template_set->fields, field_idx);
-        record = vec_elt_at_index(data_set->fields, field_idx);
 
         switch (field_spec->identifier) {
         case sourceIPv4Address:
-          s = format(s, "\t\t%U", format_ip4_address, record->data);
+          s = format(s, "\t\t%U", format_ip4_address, (ip4_address_t *)data_set->data);
           break;
         case destinationIPv4Address:
-          s = format(s, "\t\t%U", format_ip4_address, record->data);
+          s = format(s, "\t\t%U", format_ip4_address, data);
           break;
         case protocolIdentifier:
-          s = format(s, "\t\t%u", *record->data);
+          s = format(s, "\t\t%u", ntohl(*(u16 *)data));
           break;
         case sourceTransportPort:
-          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)record->data);
+          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
           break;
         case destinationTransportPort:
-          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)record->data);
+          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
           break;
         case flowStartMilliseconds:
-          s = format(s, "\t\t%U", format_timestamp, *(u64 *)record->data);
+          s = format(s, "\t\t%U", format_timestamp, *(u64 *)data);
           break;
         case flowEndMilliseconds:
-          s = format(s, "\t\t%U", format_timestamp, *(u64 *)record->data);
+          s = format(s, "\t\t%U", format_timestamp, *(u64 *)data);
           break;
         case octetDeltaCount:
-          s = format(s, "\t\t%u", *(u64 *)record->data);
+          s = format(s, "\t\t%u", ntohl(*(u64 *)data));
           break;
         case packetDeltaCount:
-          s = format(s, "\t\t%u", *(u64 *)record->data);
+          s = format(s, "\t\t%u", ntohl(*(u64 *)data));
+          break;
         default:
           ASSERT(0); // This shouldn't happen - makes the packet unreadable.
         }
+        data = (void *)((size_t)data + field_spec->size);
         s = format(s, "\n");
       };
   };
@@ -502,14 +504,9 @@ ipfix_node_fn (vlib_main_t * vm,
 
 static void ipfix_free_v10_packet(netflow_v10_data_packet_t *packet)
 {
-  netflow_v10_data_record_set_t *set;
+  netflow_v10_data_set_t *set;
   vec_foreach(set, packet->sets) {
-    netflow_v10_data_record_t *field;
-    vec_foreach(field, set->fields) {
-      free(field->data);
-    };
-
-    vec_free(set->fields);
+    free(set->data);
   };
   vec_free(packet->sets);
 }
@@ -533,66 +530,90 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   netflow_v10_template_set_t *set;
   netflow_v10_field_specifier_t *field;
   vec_foreach(set, template.sets) {
-    netflow_v10_data_record_set_t active_set;
-    active_set.fields = 0;
+    u64 data_size = 0;
+    vec_foreach(field, set->fields) {
+      data_size = data_size + field->size;
+    }
+
+    netflow_v10_data_set_t active_set;
+    active_set.data = malloc(data_size);
+    void *ptr = (size_t)active_set.data;
 
     vec_foreach(field, set->fields) {
-      netflow_v10_data_record_t data_record;
-      data_record.data = malloc(field->size);
       switch (field->identifier) {
       case sourceIPv4Address:
-        clib_warning("Writing sourceIPv4Address: %U\n", format_ip4_address, &record->flow_key.src);
         ASSERT(field->size == sizeof(ip4_address_t));
-        memcpy(data_record.data, &record->flow_key.src, field->size);
+        memcpy(ptr, &record->flow_key.src, field->size);
         break;
       case destinationIPv4Address:
-        clib_warning("Writing destinationIPv4Address: %U\n", format_ip4_address, &record->flow_key.dst);
         ASSERT(field->size == sizeof(ip4_address_t));
-        memcpy(data_record.data, &record->flow_key.dst, field->size);
+        memcpy(ptr, &record->flow_key.dst, field->size);
         break;
       case protocolIdentifier:
-        clib_warning("Writing protocolIdentifier: %d\n", record->flow_key.protocol);
         ASSERT(field->size == sizeof(u8));
-        memcpy(data_record.data, &record->flow_key.protocol, field->size);
+        memcpy(ptr, &record->flow_key.protocol, field->size);
         break;
       case sourceTransportPort:
-        clib_warning("Writing sourceTransportPort: %U\n", format_tcp_udp_port, record->flow_key.src_port);
         ASSERT(field->size == sizeof(u16));
-        memcpy(data_record.data, &record->flow_key.src_port, field->size);
+        memcpy(ptr, &record->flow_key.src_port, field->size);
         break;
       case destinationTransportPort:
-        clib_warning("Writing destinationTransportPort: %U\n", format_tcp_udp_port, record->flow_key.dst_port);
         ASSERT(field->size == sizeof(u16));
-        memcpy(data_record.data, &record->flow_key.dst_port, field->size);
+        memcpy(ptr, &record->flow_key.dst_port, field->size);
         break;
       case flowStartMilliseconds:
-        clib_warning("Writing flowStartMilliseconds: %U\n", format_timestamp, record->flow_start);
         ASSERT(field->size == sizeof(u64));
-        memcpy(data_record.data, &record->flow_start, field->size);
+        memcpy(ptr, &record->flow_start, field->size);
         break;
       case flowEndMilliseconds:
-        clib_warning("Writing flowEndMilliseconds: %U\n", format_timestamp, record->flow_end);
         ASSERT(field->size == sizeof(u64));
-        memcpy(data_record.data, &record->flow_end, field->size);
+        memcpy(ptr, &record->flow_end, field->size);
         break;
       case octetDeltaCount:
-        clib_warning("Writing octetDeltaCount: %u\n", record->octet_delta_count);
         ASSERT(field->size == sizeof(u64));
-        memcpy(data_record.data, &record->octet_delta_count, field->size);
+        memcpy(ptr, &record->octet_delta_count, field->size);
         break;
       case packetDeltaCount:
-        clib_warning("Writing packetDeltaCount: %u\n", record->packet_delta_count);
         ASSERT(field->size == sizeof(u64));
-        memcpy(data_record.data, &record->packet_delta_count, field->size);
+        memcpy(ptr, &record->packet_delta_count, field->size);
         break;
       default:
         ASSERT(0); // Error. We don't know what this type is!
       };
 
-      vec_add1(active_set.fields, data_record);
+      // Advance the pointer to the next field.
+      ptr = (void *)((size_t)ptr + field->size);
     };
 
     vec_add1(packet->sets, active_set);
+  };
+}
+
+static void ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_packet_t *packet)
+{
+  netflow_v10_data_set_t *data_set;
+  netflow_v10_template_set_t *template_set;
+  netflow_v10_field_specifier_t *field_spec;
+  netflow_v10_template_t template;
+  ipfix_make_v10_template(&template);
+
+  u64 set_idx;
+  void *ptr = buffer;
+  vec_foreach_index(set_idx, template.sets) {
+    template_set = vec_elt_at_index(template.sets, set_idx);
+    data_set = vec_elt_at_index(packet->sets, set_idx);
+
+    // Calculate the length of the set.
+    size_t set_length = sizeof(netflow_v10_set_header_t);
+    vec_foreach(field_spec, template_set->fields) {
+      set_length = set_length + field_spec->size;
+    };
+
+    // Should be able to just memcopy the entire set, data 'n all.
+    memcpy(ptr, data_set, set_length);
+
+    // Advence the pointer past the set.
+    ptr = (void *)((size_t)ptr + set_length);
   };
 }
 
