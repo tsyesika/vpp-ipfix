@@ -589,7 +589,12 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   };
 }
 
-static void ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_packet_t *packet)
+/* Writes `packet` to `buffer`. The buffer MUST have enough space allocated to fit the entire
+ * packet.
+ *
+ * Returns number of bytes written to buffer.
+ */
+static u64 ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_packet_t *packet)
 {
   netflow_v10_data_set_t *data_set;
   netflow_v10_template_set_t *template_set;
@@ -597,6 +602,7 @@ static void ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_
   netflow_v10_template_t template;
   ipfix_make_v10_template(&template);
 
+  u64 written = 0;
   u64 set_idx;
   void *ptr = buffer;
   vec_foreach_index(set_idx, template.sets) {
@@ -611,10 +617,13 @@ static void ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_
 
     // Should be able to just memcopy the entire set, data 'n all.
     memcpy(ptr, data_set, set_length);
+    written = written + (u64)set_length;
 
     // Advence the pointer past the set.
     ptr = (void *)((size_t)ptr + set_length);
   };
+
+  return written;
 }
 
 static uword ipfix_process_records_fn(vlib_main_t * vm,
