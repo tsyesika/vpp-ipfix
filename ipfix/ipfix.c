@@ -215,6 +215,20 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->msg_id_base = vl_msg_api_get_msg_ids 
       ((char *) name, VL_MSG_FIRST_AVAILABLE);
 
+  /* store this node's vlib_main in the ipfix_main_t */
+  sm->vlib_main = vm;
+
+  /* Initialize configuration values */
+  /* FIXME: don't hardcdoe */
+  sm->collector_ip.data[0] = 10;
+  sm->collector_ip.data[1] = 10;
+  sm->collector_ip.data[2] = 1;
+  sm->collector_ip.data[3] = 1;
+  sm->exporter_ip.data[0] = 10;
+  sm->exporter_ip.data[1] = 10;
+  sm->exporter_ip.data[2] = 1;
+  sm->exporter_ip.data[3] = 2;
+
   /* Initialize flow records vector */
   sm->flow_records = 0;
 

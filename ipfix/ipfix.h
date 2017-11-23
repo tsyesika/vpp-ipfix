@@ -46,6 +46,10 @@ typedef struct {
 
     clib_bihash_48_8_t flow_hash;
 
+    /* exporter configuration */
+    ip4_address_t exporter_ip;
+    ip4_address_t collector_ip;
+
     /* vector of flow records */
     ipfix_ip4_flow_value_t * flow_records;
 
@@ -53,6 +57,7 @@ typedef struct {
   ipfix_ip4_flow_value_t * expired_records;
 
     /* convenience */
+    vlib_main_t * vlib_main;
     vnet_main_t * vnet_main;
 } ipfix_main_t;
 
