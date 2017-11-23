@@ -220,6 +220,8 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
 
   /* Initialize configuration values */
   /* FIXME: don't hardcdoe */
+  sm->exporter_port = 49152;
+  sm->collector_port = 4739;
   sm->collector_ip.data[0] = 10;
   sm->collector_ip.data[1] = 10;
   sm->collector_ip.data[2] = 1;

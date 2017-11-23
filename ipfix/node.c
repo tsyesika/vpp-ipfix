@@ -334,11 +334,11 @@ static void ipfix_send_packet(vlib_main_t * vm)
   vlib_node_t * next_node;
   u32 * to_next;
   vlib_buffer_t * b0;
-  ethernet_header_t * en0;
   ip4_header_t * ip0;
   udp_header_t * udp0;
   u32 * buffers = NULL;
   int num_buffers;
+  ipfix_packet_header_t * payload;
 
   /* FIXME: why would the next node be ip4-lookup? */
   next_node = vlib_get_node_by_name(vm, (u8 *) "ip4-lookup");
@@ -359,17 +359,18 @@ static void ipfix_send_packet(vlib_main_t * vm)
   b0 = vlib_get_buffer(vm, buffers[0]);
 
   b0->current_data = 0;
-  b0->current_length = sizeof(ip4_header_t);
+  b0->current_length = sizeof(ip4_header_t) + sizeof(udp_header_t) + \
+    sizeof(ipfix_packet_header_t);
   b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
 
   /* VPP generates this buffer so we have to set this flag apparently?
    * https://www.mail-archive.com/vpp-dev@lists.fd.io/msg02656.html */
   b0->flags |= VNET_BUFFER_LOCALLY_ORIGINATED;
 
-  ip0 = b0->data;
+  ip0 = (ip4_header_t*) b0->data;
   ip0->ip_version_and_header_length = 0x45;
   ip0->tos = 0;
-  ip0->length = clib_byte_swap_u16(20);
+  ip0->length = clib_byte_swap_u16(20 + 8 + 16);
   ip0->fragment_id = 0;
   ip0->flags_and_fragment_offset = 0;
   ip0->ttl = 64;
@@ -378,6 +379,20 @@ static void ipfix_send_packet(vlib_main_t * vm)
 
   clib_memcpy(&ip0->src_address.data, &im->exporter_ip.data, sizeof(ip4_address_t));
   clib_memcpy(&ip0->dst_address.data, &im->collector_ip.data, sizeof(ip4_address_t));
+
+  udp0 = (udp_header_t*) (ip0 + 1);
+  udp0->src_port = clib_byte_swap_u16(im->exporter_port);
+  udp0->dst_port = clib_byte_swap_u16(im->collector_port);
+  udp0->length = clib_byte_swap_u16(8 + 16);
+
+  payload = (ipfix_packet_header_t*) (udp0 + 1);
+  payload->version = clib_byte_swap_u16(10);
+  payload->byte_length = 0;
+  payload->timestamp = 0;
+  payload->sequence_number = 0;
+  payload->observation_domain = 0;
+
+  /* FIXME Add the actual IPFIX records here */
 
   /* set to_next index to the buffer index we allocated */
   *to_next = buffers[0];

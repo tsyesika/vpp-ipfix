@@ -41,6 +41,14 @@ typedef struct {
 } ipfix_ip4_flow_value_t;
 
 typedef struct {
+  u16 version;
+  u16 byte_length;
+  u32 timestamp;
+  u32 sequence_number;
+  u32 observation_domain;
+} ipfix_packet_header_t;
+
+typedef struct {
     /* API message ID base */
     u16 msg_id_base;
 
@@ -49,6 +57,8 @@ typedef struct {
     /* exporter configuration */
     ip4_address_t exporter_ip;
     ip4_address_t collector_ip;
+    u16 exporter_port;
+    u16 collector_port;
 
     /* vector of flow records */
     ipfix_ip4_flow_value_t * flow_records;
