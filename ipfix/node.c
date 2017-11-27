@@ -626,6 +626,80 @@ static u64 ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_p
   return written;
 }
 
+static void ipfix_send_packet(vlib_main_t * vm)
+{
+  ipfix_main_t * im = &ipfix_main;
+  vlib_frame_t * nf;
+  vlib_node_t * next_node;
+  u32 * to_next;
+  vlib_buffer_t * b0;
+  ip4_header_t * ip0;
+  udp_header_t * udp0;
+  u32 * buffers = NULL;
+  int num_buffers;
+  netflow_v10_header_t * payload;
+
+  /* FIXME: why would the next node be ip4-lookup? */
+  next_node = vlib_get_node_by_name(vm, (u8 *) "ip4-lookup");
+  nf = vlib_get_frame_to_node(vm, next_node->index);
+  nf->n_vectors = 1;
+  to_next = vlib_frame_vector_args(nf);
+
+  /* FIXME: how much buffer does this allocate? */
+  /* allocate a buffer, get the index for it into buffers */
+  vec_validate(buffers, 0);
+  num_buffers = vlib_buffer_alloc(vm, buffers, vec_len(buffers));
+
+  if (num_buffers != 1) {
+    clib_warning("Wrong number of buffers allocated %d", num_buffers);
+  }
+
+  /* get the actual buffer pointer from our buffer index */
+  b0 = vlib_get_buffer(vm, buffers[0]);
+
+  b0->current_data = 0;
+  b0->current_length = sizeof(ip4_header_t) + sizeof(udp_header_t) + \
+    sizeof(netflow_v10_header_t);
+  b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
+
+  /* VPP generates this buffer so we have to set this flag apparently?
+   * https://www.mail-archive.com/vpp-dev@lists.fd.io/msg02656.html */
+  b0->flags |= VNET_BUFFER_LOCALLY_ORIGINATED;
+
+  ip0 = (ip4_header_t*) b0->data;
+  ip0->ip_version_and_header_length = 0x45;
+  ip0->tos = 0;
+  ip0->length = clib_byte_swap_u16(20 + 8 + 16);
+  ip0->fragment_id = 0;
+  ip0->flags_and_fragment_offset = 0;
+  ip0->ttl = 64;
+  ip0->protocol = 17;
+  ip0->checksum = 0;
+
+  clib_memcpy(&ip0->src_address.data, &im->exporter_ip.data, sizeof(ip4_address_t));
+  clib_memcpy(&ip0->dst_address.data, &im->collector_ip.data, sizeof(ip4_address_t));
+
+  udp0 = (udp_header_t*) (ip0 + 1);
+  udp0->src_port = clib_byte_swap_u16(im->exporter_port);
+  udp0->dst_port = clib_byte_swap_u16(im->collector_port);
+  udp0->length = clib_byte_swap_u16(8 + 16);
+
+  payload = (netflow_v10_header_t*) (udp0 + 1);
+  payload->version = clib_byte_swap_u16(10);
+  payload->byte_length = 0;
+  payload->timestamp = 0;
+  payload->sequence_number = 0;
+  payload->observation_domain = 0;
+
+  /* FIXME Add the actual IPFIX records here */
+
+  /* set to_next index to the buffer index we allocated */
+  *to_next = buffers[0];
+  to_next++;
+
+  vlib_put_frame_to_node(vm, next_node->index, nf);
+}
+
 static uword ipfix_process_records_fn(vlib_main_t * vm,
                                    vlib_node_runtime_t * node,
                                    vlib_frame_t * frame)
@@ -658,6 +732,7 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
           clib_warning("Warning: Could not remove flow form hash.");
         };
 
+        ipfix_send_packet(im->vlib_main);
       } else if ((record->flow_start + active_flow_timeout) < current_time) {
         clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record);
         vec_add1(im->expired_records, *record);
