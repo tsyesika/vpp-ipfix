@@ -514,6 +514,7 @@ static void ipfix_free_v10_packet(netflow_v10_data_packet_t *packet)
 static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
                                    netflow_v10_data_packet_t *packet)
 {
+  u64 byte_length = 16;
   netflow_v10_template_t template;
   ipfix_make_v10_template(&template);
 
@@ -526,6 +527,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   packet->sets = 0;
   packet->header.version = ntohs(10);
   packet->header.timestamp = ntohs(current_time_clock.tv_sec);
+  /* set length field in header at end */
 
   netflow_v10_template_set_t *set;
   netflow_v10_field_specifier_t *field;
@@ -534,6 +536,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
     vec_foreach(field, set->fields) {
       data_size = data_size + field->size;
     }
+    byte_length += data_size;
 
     netflow_v10_data_set_t active_set;
     active_set.data = malloc(data_size);
@@ -584,6 +587,8 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
       // Advance the pointer to the next field.
       ptr = (void *)((size_t)ptr + field->size);
     };
+
+    packet->header.byte_length = ntohs(byte_length);
 
     vec_add1(packet->sets, active_set);
   };
