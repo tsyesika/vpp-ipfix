@@ -49,6 +49,9 @@ typedef struct {
  */
 static void ipfix_make_v10_template(netflow_v10_template_t *template)
 {
+  /* Initialize an empty flow key to calculate the offsets against. */
+  ipfix_ip4_flow_value_t record;
+
   /* Initialize the set vector. */
   template->sets = 0;
 
@@ -60,46 +63,55 @@ static void ipfix_make_v10_template(netflow_v10_template_t *template)
   netflow_v10_field_specifier_t src_address;
   src_address.identifier = sourceIPv4Address;
   src_address.size = sizeof(u8) * 4;
+  src_address.record_offset = (size_t)&record.flow_key.src - (size_t)&record;
   vec_add1(set.fields, src_address);
 
   netflow_v10_field_specifier_t dst_address;
   dst_address.identifier = destinationIPv4Address;
   dst_address.size = sizeof(u8) * 4;
+  dst_address.record_offset = (size_t)&record.flow_key.dst - (size_t)&record;
   vec_add1(set.fields, dst_address);
 
   netflow_v10_field_specifier_t protocol;
   protocol.identifier = protocolIdentifier;
   protocol.size = sizeof(u8);
+  protocol.record_offset = (size_t)&record.flow_key.protocol - (size_t)&record;
   vec_add1(set.fields, protocol);
 
   netflow_v10_field_specifier_t src_port;
   src_port.identifier = sourceTransportPort;
   src_port.size = sizeof(u16);
+  src_port.record_offset = (size_t)&record.flow_key.src_port - (size_t)&record;
   vec_add1(set.fields, src_port);
 
   netflow_v10_field_specifier_t dst_port;
   dst_port.identifier = destinationTransportPort;
   dst_port.size = sizeof(u16);
+  dst_port.record_offset = (size_t)&record.flow_key.dst_port - (size_t)&record;
   vec_add1(set.fields, dst_port);
 
   netflow_v10_field_specifier_t flow_start;
   flow_start.identifier = flowStartMilliseconds;
   flow_start.size = sizeof(u64);
+  flow_start.record_offset = (size_t)&record.flow_start - (size_t)&record;
   vec_add1(set.fields, flow_start);
 
   netflow_v10_field_specifier_t flow_end;
   flow_end.identifier = flowEndMilliseconds;
   flow_end.size = sizeof(u64);
+  flow_end.record_offset = (size_t)&record.flow_end - (size_t)&record;
   vec_add1(set.fields, flow_end);
 
   netflow_v10_field_specifier_t octet_count;
   octet_count.identifier = octetDeltaCount;
   octet_count.size = sizeof(u64);
+  octet_count.record_offset = (size_t)&record.octet_delta_count - (size_t)&record;
   vec_add1(set.fields, octet_count);
 
   netflow_v10_field_specifier_t packet_count;
   packet_count.identifier = packetDeltaCount;
   packet_count.size = sizeof(u64);
+  packet_count.record_offset = (size_t)&record.packet_delta_count - (size_t)&record;
   vec_add1(set.fields, packet_count);
 
   vec_add1(template->sets, set);
@@ -538,48 +550,12 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
     netflow_v10_data_set_t active_set;
     active_set.data = malloc(data_size);
     void *ptr = (size_t)active_set.data;
-
+    void *record_ptr;
     vec_foreach(field, set->fields) {
-      switch (field->identifier) {
-      case sourceIPv4Address:
-        ASSERT(field->size == sizeof(ip4_address_t));
-        memcpy(ptr, &record->flow_key.src, field->size);
-        break;
-      case destinationIPv4Address:
-        ASSERT(field->size == sizeof(ip4_address_t));
-        memcpy(ptr, &record->flow_key.dst, field->size);
-        break;
-      case protocolIdentifier:
-        ASSERT(field->size == sizeof(u8));
-        memcpy(ptr, &record->flow_key.protocol, field->size);
-        break;
-      case sourceTransportPort:
-        ASSERT(field->size == sizeof(u16));
-        memcpy(ptr, &record->flow_key.src_port, field->size);
-        break;
-      case destinationTransportPort:
-        ASSERT(field->size == sizeof(u16));
-        memcpy(ptr, &record->flow_key.dst_port, field->size);
-        break;
-      case flowStartMilliseconds:
-        ASSERT(field->size == sizeof(u64));
-        memcpy(ptr, &record->flow_start, field->size);
-        break;
-      case flowEndMilliseconds:
-        ASSERT(field->size == sizeof(u64));
-        memcpy(ptr, &record->flow_end, field->size);
-        break;
-      case octetDeltaCount:
-        ASSERT(field->size == sizeof(u64));
-        memcpy(ptr, &record->octet_delta_count, field->size);
-        break;
-      case packetDeltaCount:
-        ASSERT(field->size == sizeof(u64));
-        memcpy(ptr, &record->packet_delta_count, field->size);
-        break;
-      default:
-        ASSERT(0); // Error. We don't know what this type is!
-      };
+      record_ptr = (size_t)&record + field->record_offset;
+      clib_warning("Writing to address: %d (record: %d)\n", record_ptr, &record);
+      clib_warning("Data: %U\n", format_ip4_address, record_ptr);
+      memcpy(ptr, record_ptr, field->size);
 
       // Advance the pointer to the next field.
       ptr = (void *)((size_t)ptr + field->size);
