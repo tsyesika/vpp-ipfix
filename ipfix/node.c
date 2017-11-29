@@ -583,17 +583,22 @@ static u64 ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_p
     data_set = vec_elt_at_index(packet->sets, set_idx);
 
     // Calculate the length of the set.
-    size_t set_length = sizeof(netflow_v10_set_header_t);
+    size_t header_length = sizeof(netflow_v10_set_header_t);
+    size_t data_length = 0;
     vec_foreach(field_spec, template_set->fields) {
-      set_length = set_length + field_spec->size;
+      data_length = data_length + field_spec->size;
     };
 
     // Should be able to just memcopy the entire set, data 'n all.
-    memcpy(ptr, data_set, set_length);
-    written = written + (u64)set_length;
+    data_set->header.id = htons(1);
+    data_set->header.length = htons(data_length);
+    memcpy(ptr, &data_set->header, header_length);
+    ptr = (void*)((size_t)ptr + header_length);
+    memcpy(ptr, data_set->data, data_length);
+    written = written + (u64)header_length + (u64)data_length;
 
     // Advence the pointer past the set.
-    ptr = (void *)((size_t)ptr + set_length);
+    ptr = (void *)((size_t)ptr + header_length + data_length);
   };
 
   return written;
