@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2017 Igalia
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -550,12 +551,8 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
     netflow_v10_data_set_t active_set;
     active_set.data = malloc(data_size);
     void *ptr = (size_t)active_set.data;
-    void *record_ptr;
     vec_foreach(field, set->fields) {
-      record_ptr = (size_t)&record + field->record_offset;
-      clib_warning("Writing to address: %d (record: %d)\n", record_ptr, &record);
-      clib_warning("Data: %U\n", format_ip4_address, record_ptr);
-      memcpy(ptr, record_ptr, field->size);
+      memcpy(ptr, (void *)((size_t)record + field->record_offset), field->size);
 
       // Advance the pointer to the next field.
       ptr = (void *)((size_t)ptr + field->size);
