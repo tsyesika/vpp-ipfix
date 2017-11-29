@@ -23,6 +23,7 @@
 #include <vppinfra/error.h>
 #include <vppinfra/elog.h>
 #include <vppinfra/vec.h>
+#include <ipfix/netflow_v10.h>
 
 typedef struct {
   ip4_address_t src;
@@ -41,19 +42,22 @@ typedef struct {
 } ipfix_ip4_flow_value_t;
 
 typedef struct {
-    /* API message ID base */
-    u16 msg_id_base;
+  /* API message ID base */
+  u16 msg_id_base;
 
-    clib_bihash_48_8_t flow_hash;
+  clib_bihash_48_8_t flow_hash;
 
-    /* vector of flow records */
-    ipfix_ip4_flow_value_t * flow_records;
+  /* vector of flow records */
+  ipfix_ip4_flow_value_t * flow_records;
 
   /* vector of expired flows to export */
   ipfix_ip4_flow_value_t * expired_records;
 
-    /* convenience */
-    vnet_main_t * vnet_main;
+  /* vector of IPFIX data packets to be transmitted */
+  netflow_v10_data_packet_t *data_packets;
+
+  /* convenience */
+  vnet_main_t * vnet_main;
 } ipfix_main_t;
 
 extern ipfix_main_t ipfix_main;

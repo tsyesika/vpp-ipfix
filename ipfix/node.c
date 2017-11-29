@@ -1,3 +1,4 @@
+
 /*
  * Copyright (c) 2017 Igalia
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +45,79 @@ typedef struct {
   ipfix_ip4_flow_value_t *flow_records;
 } ipfix_trace_t;
 
+/* TODO: Replace with the user configurable template.
+ * Parsed from the CSV file describing the fields
+ */
+static void ipfix_make_v10_template(netflow_v10_template_t *template)
+{
+  /* Initialize an empty flow key to calculate the offsets against. */
+  ipfix_ip4_flow_value_t record;
+
+  /* Initialize the set vector. */
+  template->sets = 0;
+
+  /* Create a single set for these */
+  netflow_v10_template_set_t set;
+  set.id = 1;
+  set.fields = 0; // Initialize the fields vector.
+
+  netflow_v10_field_specifier_t src_address;
+  src_address.identifier = sourceIPv4Address;
+  src_address.size = sizeof(u8) * 4;
+  src_address.record_offset = (size_t)&record.flow_key.src - (size_t)&record;
+  vec_add1(set.fields, src_address);
+
+  netflow_v10_field_specifier_t dst_address;
+  dst_address.identifier = destinationIPv4Address;
+  dst_address.size = sizeof(u8) * 4;
+  dst_address.record_offset = (size_t)&record.flow_key.dst - (size_t)&record;
+  vec_add1(set.fields, dst_address);
+
+  netflow_v10_field_specifier_t protocol;
+  protocol.identifier = protocolIdentifier;
+  protocol.size = sizeof(u8);
+  protocol.record_offset = (size_t)&record.flow_key.protocol - (size_t)&record;
+  vec_add1(set.fields, protocol);
+
+  netflow_v10_field_specifier_t src_port;
+  src_port.identifier = sourceTransportPort;
+  src_port.size = sizeof(u16);
+  src_port.record_offset = (size_t)&record.flow_key.src_port - (size_t)&record;
+  vec_add1(set.fields, src_port);
+
+  netflow_v10_field_specifier_t dst_port;
+  dst_port.identifier = destinationTransportPort;
+  dst_port.size = sizeof(u16);
+  dst_port.record_offset = (size_t)&record.flow_key.dst_port - (size_t)&record;
+  vec_add1(set.fields, dst_port);
+
+  netflow_v10_field_specifier_t flow_start;
+  flow_start.identifier = flowStartMilliseconds;
+  flow_start.size = sizeof(u64);
+  flow_start.record_offset = (size_t)&record.flow_start - (size_t)&record;
+  vec_add1(set.fields, flow_start);
+
+  netflow_v10_field_specifier_t flow_end;
+  flow_end.identifier = flowEndMilliseconds;
+  flow_end.size = sizeof(u64);
+  flow_end.record_offset = (size_t)&record.flow_end - (size_t)&record;
+  vec_add1(set.fields, flow_end);
+
+  netflow_v10_field_specifier_t octet_count;
+  octet_count.identifier = octetDeltaCount;
+  octet_count.size = sizeof(u64);
+  octet_count.record_offset = (size_t)&record.octet_delta_count - (size_t)&record;
+  vec_add1(set.fields, octet_count);
+
+  netflow_v10_field_specifier_t packet_count;
+  packet_count.identifier = packetDeltaCount;
+  packet_count.size = sizeof(u64);
+  packet_count.record_offset = (size_t)&record.packet_delta_count - (size_t)&record;
+  vec_add1(set.fields, packet_count);
+
+  vec_add1(template->sets, set);
+}
+
 static u8* format_timestamp(u8 *s, va_list *args) {
   time_t timestamp = va_arg (*args, time_t) / 1e3;
   struct tm time;
@@ -61,20 +135,134 @@ static u8* format_ipfix_ip4_flow(u8 *s, va_list *args) {
   ipfix_ip4_flow_value_t *flow_record = va_arg (*args, ipfix_ip4_flow_value_t*);
   ipfix_ip4_flow_key_t flow_key = flow_record->flow_key;
 
-  s = format(s, "\n[Flow key] src: %U, dst: %U, protocol: %d, src port: %U, dst port: %U\n",
+  s = format(s, "\n[Flow key] src: %U, dst: %U, protocol: %u, src port: %U, dst port: %U\n",
              format_ip4_address, &flow_key.src,
              format_ip4_address, &flow_key.dst,
              flow_key.protocol,
              format_tcp_udp_port, flow_key.src_port,
              format_tcp_udp_port, flow_key.dst_port);
-  s = format(s, "[Flow record] start: %U, end: %U, count: %d, octets: %d\n",
+  s = format(s, "[Flow record] start: %U, end: %U, count: %u, octets: %u\n",
              format_timestamp, flow_record->flow_start,
              format_timestamp, flow_record->flow_end,
              ntohl(flow_record->packet_delta_count),
              ntohl(flow_record->octet_delta_count));
 
   return s;
+}
 
+static u8* format_netflow_v10_template(u8 *s, va_list *args) {
+  netflow_v10_template_t *template = va_arg (*args, netflow_v10_template_t*);
+  netflow_v10_template_set_t *set;
+  s = format(s, "Netflow V10 Template:\n");
+  vec_foreach(set, template->sets) {
+    netflow_v10_field_specifier_t *field;
+    s = format(s, "\tSet %u:\n", set->id);
+    vec_foreach(field, set->fields) {
+      s = format(s, "\t\t");
+
+      switch (field->identifier) {
+      case protocolIdentifier:
+        s = format(s, "protocolIdentifier (%d)\t\t", field->identifier);
+        break;
+      case sourceTransportPort:
+        s = format(s, "sourceTransportPort (%u)\t\t", field->identifier);
+        break;
+      case sourceIPv4Address:
+        s = format(s, "sourceIPv4Address (%u)\t\t", field->identifier);
+        break;
+      case destinationTransportPort:
+        s = format(s, "destinationTransportPort (%u)\t", field->identifier);
+        break;
+      case destinationIPv4Address:
+        s = format(s, "destinationIPv4Address (%u)\t", field->identifier);
+        break;
+      case flowStartMilliseconds:
+        s = format(s, "flowStartMilliseconds (%u)\t", field->identifier);
+        break;
+      case flowEndMilliseconds:
+        s = format(s, "flowEndMilliseconds (%u)\t", field->identifier);
+        break;
+      case octetDeltaCount:
+        s = format(s, "octetDeltaCount (%u)\t\t", field->identifier);
+        break;
+      case packetDeltaCount:
+        s = format(s, "packetDeltaCount (%u)\t\t", field->identifier);
+        break;
+      default:
+        s = format(s, "-- unsupported -- (%u)\t\t", field->identifier);
+      };
+
+      s = format(s, "octets: %u\t\tenterprise number: %u\n",
+                 field->size, field->enterprise_number);
+    };
+  };
+  s = format(s, "End of V10 Template\n");
+  return s;
+}
+
+static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
+  netflow_v10_data_packet_t *packet = va_arg (*args, netflow_v10_data_packet_t*);
+  netflow_v10_template_set_t *template_set;
+  netflow_v10_data_set_t *data_set;
+  netflow_v10_field_specifier_t *field_spec;
+  netflow_v10_template_t template;
+  ipfix_make_v10_template(&template);
+
+  s = format(s, "Netflow V10 Data Packet:\n");
+
+  // The data packet is build to mirror the template with data, It _should_ be
+  // safe to use the same indices.
+  u64 set_idx;
+  void *data;
+  vec_foreach_index(set_idx, template.sets) {
+      template_set = vec_elt_at_index(template.sets, set_idx);
+      data_set = vec_elt_at_index(packet->sets, set_idx);
+      format(s, "\tSet %u:\n", template_set->id);
+
+      data = data_set->data;
+      u64 field_idx;
+      vec_foreach_index(field_idx, template_set->fields) {
+        field_spec = vec_elt_at_index(template_set->fields, field_idx);
+
+        switch (field_spec->identifier) {
+        case sourceIPv4Address:
+          s = format(s, "\t\t%U", format_ip4_address, (ip4_address_t *)data_set->data);
+          break;
+        case destinationIPv4Address:
+          s = format(s, "\t\t%U", format_ip4_address, data);
+          break;
+        case protocolIdentifier:
+          s = format(s, "\t\t%u", ntohl(*(u16 *)data));
+          break;
+        case sourceTransportPort:
+          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
+          break;
+        case destinationTransportPort:
+          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
+          break;
+        case flowStartMilliseconds:
+          s = format(s, "\t\t%U", format_timestamp, *(u64 *)data);
+          break;
+        case flowEndMilliseconds:
+          s = format(s, "\t\t%U", format_timestamp, *(u64 *)data);
+          break;
+        case octetDeltaCount:
+          s = format(s, "\t\t%u", ntohl(*(u64 *)data));
+          break;
+        case packetDeltaCount:
+          s = format(s, "\t\t%u", ntohl(*(u64 *)data));
+          break;
+        default:
+          ASSERT(0); // This shouldn't happen - makes the packet unreadable.
+        }
+        data = (void *)((size_t)data + field_spec->size);
+        s = format(s, "\n");
+      };
+  };
+
+  s = format(s, "End of packet\n");
+
+  return s;
 }
 
 /* packet trace+ format function */
@@ -327,6 +515,95 @@ ipfix_node_fn (vlib_main_t * vm,
   return frame->n_vectors;
 }
 
+static void ipfix_free_v10_packet(netflow_v10_data_packet_t *packet)
+{
+  netflow_v10_data_set_t *set;
+  vec_foreach(set, packet->sets) {
+    free(set->data);
+  };
+  vec_free(packet->sets);
+}
+
+static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
+                                   netflow_v10_data_packet_t *packet)
+{
+  netflow_v10_template_t template;
+  ipfix_make_v10_template(&template);
+
+  clib_warning("%U", format_netflow_v10_template, &template);
+
+  struct timespec current_time_clock;
+  clock_gettime(CLOCK_REALTIME, &current_time_clock);
+
+
+  packet->sets = 0;
+  packet->header.version = ntohs(10);
+  packet->header.timestamp = ntohs(current_time_clock.tv_sec);
+
+  netflow_v10_template_set_t *set;
+  netflow_v10_field_specifier_t *field;
+  vec_foreach(set, template.sets) {
+    u64 data_size = 0;
+    vec_foreach(field, set->fields) {
+      data_size = data_size + field->size;
+    }
+
+    netflow_v10_data_set_t active_set;
+    active_set.data = malloc(data_size);
+    void *ptr = (size_t)active_set.data;
+    vec_foreach(field, set->fields) {
+      memcpy(ptr, (void *)((size_t)record + field->record_offset), field->size);
+
+      // Advance the pointer to the next field.
+      ptr = (void *)((size_t)ptr + field->size);
+    };
+
+    vec_add1(packet->sets, active_set);
+  };
+}
+
+/* Writes `packet` to `buffer`. The buffer MUST have enough space allocated to fit the entire
+ * packet.
+ *
+ * Returns number of bytes written to buffer.
+ */
+static u64 ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_packet_t *packet)
+{
+  netflow_v10_data_set_t *data_set;
+  netflow_v10_template_set_t *template_set;
+  netflow_v10_field_specifier_t *field_spec;
+  netflow_v10_template_t template;
+  ipfix_make_v10_template(&template);
+
+  u64 written = 0;
+  u64 set_idx;
+  void *ptr = buffer;
+  vec_foreach_index(set_idx, template.sets) {
+    template_set = vec_elt_at_index(template.sets, set_idx);
+    data_set = vec_elt_at_index(packet->sets, set_idx);
+
+    // Calculate the length of the set.
+    size_t header_length = sizeof(netflow_v10_set_header_t);
+    size_t data_length = 0;
+    vec_foreach(field_spec, template_set->fields) {
+      data_length = data_length + field_spec->size;
+    };
+
+    // Should be able to just memcopy the entire set, data 'n all.
+    data_set->header.id = htons(1);
+    data_set->header.length = htons(data_length);
+    memcpy(ptr, &data_set->header, header_length);
+    ptr = (void*)((size_t)ptr + header_length);
+    memcpy(ptr, data_set->data, data_length);
+    written = written + (u64)header_length + (u64)data_length;
+
+    // Advence the pointer past the set.
+    ptr = (void *)((size_t)ptr + header_length + data_length);
+  };
+
+  return written;
+}
+
 static uword ipfix_process_records_fn(vlib_main_t * vm,
                                    vlib_node_runtime_t * node,
                                    vlib_frame_t * frame)
@@ -345,8 +622,6 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
     u64 record_idx = 0;
 
     vec_foreach_index(record_idx, im->flow_records) {
-      clib_warning("Vector length: %d", vec_len(im->flow_records));
-
       record = vec_elt_at_index(im->flow_records, record_idx);
 
       if ((record->flow_end + idle_flow_timeout) < current_time) {
@@ -370,6 +645,23 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
         record->packet_delta_count = 0;
         record->octet_delta_count = 0;
       }
+    };
+
+    vec_foreach_index(record_idx, im->expired_records) {
+      netflow_v10_data_packet_t packet;
+      record = vec_elt_at_index(im->expired_records, record_idx);
+      ipfix_build_v10_packet(record, &packet);
+      vec_add1(im->data_packets, packet);
+      vec_del1(im->expired_records, record_idx);
+    };
+
+    netflow_v10_data_packet_t *packet;
+    u64 packet_idx;
+    vec_foreach_index(packet_idx, im->data_packets) {
+      packet = vec_elt_at_index(im->data_packets, packet_idx);
+      clib_warning("%U", format_netflow_v10_data_packet, packet);
+      ipfix_free_v10_packet(packet);
+      vec_del1(im->data_packets, packet_idx);
     };
 
     if (vlib_process_suspend_time_is_zero(poll_time_remaining)) {

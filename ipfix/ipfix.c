@@ -221,6 +221,9 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   /* Initialize expired flow records vector */
   sm->expired_records = 0;
 
+  /* Initialize IPFIX data packets vector */
+  sm->data_packets = 0;
+
   clib_bihash_init_48_8(&sm->flow_hash, "flowhash", 1048, 128<<20);
 
   error = ipfix_plugin_api_hookup (vm);
