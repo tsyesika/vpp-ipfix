@@ -581,7 +581,10 @@ static u64 ipfix_write_template_set(void *buffer) {
   netflow_v10_template_set_t *template_set;
   netflow_v10_template_t template;
   netflow_v10_field_specifier_t *field_spec;
+  struct timespec current_time_clock;
+
   ipfix_make_v10_template(&template);
+  clock_gettime(CLOCK_REALTIME, &current_time_clock);
 
   /* advance pointer past header, write header at end */
   ipfix_header = (netflow_v10_header_t*) ptr;
@@ -609,7 +612,7 @@ static u64 ipfix_write_template_set(void *buffer) {
   ipfix_header->version = clib_byte_swap_u16(10);
   ipfix_header->byte_length = clib_byte_swap_u16(octets);
   /* FIXME */
-  ipfix_header->timestamp = 0;
+  ipfix_header->timestamp = clib_byte_swap_u32(current_time_clock.tv_sec);
   ipfix_header->sequence_number = 0;
   ipfix_header->observation_domain = clib_byte_swap_u32(1);
 
