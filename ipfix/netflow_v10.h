@@ -24,6 +24,7 @@ typedef struct {
   u16 identifier;
   u16 size; // In octets.
   u32 enterprise_number;
+  size_t record_offset;
 } netflow_v10_field_specifier_t;
 
 typedef struct {
