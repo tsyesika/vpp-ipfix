@@ -527,6 +527,7 @@ static void ipfix_free_v10_packet(netflow_v10_data_packet_t *packet)
 static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
                                    netflow_v10_data_packet_t *packet)
 {
+  u64 byte_length = 16;
   netflow_v10_template_t template;
   ipfix_make_v10_template(&template);
 
@@ -539,6 +540,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   packet->sets = 0;
   packet->header.version = ntohs(10);
   packet->header.timestamp = ntohs(current_time_clock.tv_sec);
+  /* set length field in header at end */
 
   netflow_v10_template_set_t *set;
   netflow_v10_field_specifier_t *field;
@@ -547,6 +549,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
     vec_foreach(field, set->fields) {
       data_size = data_size + field->size;
     }
+    byte_length += data_size;
 
     netflow_v10_data_set_t active_set;
     active_set.data = malloc(data_size);
@@ -558,6 +561,8 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
       ptr = (void *)((size_t)ptr + field->size);
     };
 
+    packet->header.byte_length = ntohs(byte_length);
+
     vec_add1(packet->sets, active_set);
   };
 }
@@ -567,7 +572,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
  *
  * Returns number of bytes written to buffer.
  */
-static u64 ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_packet_t *packet)
+static u64 ipfix_write_v10_data_packet(void *buffer, netflow_v10_data_packet_t *packet)
 {
   netflow_v10_data_set_t *data_set;
   netflow_v10_template_set_t *template_set;
@@ -578,6 +583,10 @@ static u64 ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_p
   u64 written = 0;
   u64 set_idx;
   void *ptr = buffer;
+
+  memcpy(ptr, &packet->header, sizeof(netflow_v10_header_t));
+  ptr = (void*)((size_t)ptr + sizeof(netflow_v10_header_t));
+
   vec_foreach_index(set_idx, template.sets) {
     template_set = vec_elt_at_index(template.sets, set_idx);
     data_set = vec_elt_at_index(packet->sets, set_idx);
@@ -602,6 +611,76 @@ static u64 ipfix_write_v10_data_packet(vlib_buffer_t *buffer, netflow_v10_data_p
   };
 
   return written;
+}
+
+static void ipfix_send_packet(vlib_main_t * vm, netflow_v10_data_packet_t *packet)
+{
+  ipfix_main_t * im = &ipfix_main;
+  vlib_frame_t * nf;
+  vlib_node_t * next_node;
+  u32 * to_next;
+  vlib_buffer_t * b0;
+  ip4_header_t * ip0;
+  udp_header_t * udp0;
+  u32 * buffers = NULL;
+  int num_buffers;
+  void * payload;
+  int payload_length;
+
+  /* FIXME: why would the next node be ip4-lookup? */
+  next_node = vlib_get_node_by_name(vm, (u8 *) "ip4-lookup");
+  nf = vlib_get_frame_to_node(vm, next_node->index);
+  nf->n_vectors = 1;
+  to_next = vlib_frame_vector_args(nf);
+
+  /* FIXME: how much buffer does this allocate? */
+  /* allocate a buffer, get the index for it into buffers */
+  vec_validate(buffers, 0);
+  num_buffers = vlib_buffer_alloc(vm, buffers, vec_len(buffers));
+
+  if (num_buffers != 1) {
+    clib_warning("Wrong number of buffers allocated %d", num_buffers);
+  }
+
+  /* get the actual buffer pointer from our buffer index */
+  b0 = vlib_get_buffer(vm, buffers[0]);
+
+  b0->current_data = 0;
+  b0->flags |= VLIB_BUFFER_TOTAL_LENGTH_VALID;
+
+  /* VPP generates this buffer so we have to set this flag apparently?
+   * https://www.mail-archive.com/vpp-dev@lists.fd.io/msg02656.html */
+  b0->flags |= VNET_BUFFER_LOCALLY_ORIGINATED;
+
+  ip0 = (ip4_header_t*) b0->data;
+  ip0->ip_version_and_header_length = 0x45;
+  ip0->tos = 0;
+  ip0->fragment_id = 0;
+  ip0->flags_and_fragment_offset = 0;
+  ip0->ttl = 64;
+  ip0->protocol = 17;
+  ip0->checksum = 0;
+
+  clib_memcpy(&ip0->src_address.data, &im->exporter_ip.data, sizeof(ip4_address_t));
+  clib_memcpy(&ip0->dst_address.data, &im->collector_ip.data, sizeof(ip4_address_t));
+
+  udp0 = (udp_header_t*) (ip0 + 1);
+  udp0->src_port = clib_byte_swap_u16(im->exporter_port);
+  udp0->dst_port = clib_byte_swap_u16(im->collector_port);
+
+  payload = (void*) (udp0 + 1);
+  payload_length = ipfix_write_v10_data_packet(payload, packet);
+
+  /* set all lengths at once */
+  b0->current_length = sizeof(ip4_header_t) + sizeof(udp_header_t) + payload_length;
+  ip0->length = clib_byte_swap_u16(20 + 8 + payload_length);
+  udp0->length = clib_byte_swap_u16(8 + payload_length);
+
+  /* set to_next index to the buffer index we allocated */
+  *to_next = buffers[0];
+  to_next++;
+
+  vlib_put_frame_to_node(vm, next_node->index, nf);
 }
 
 static uword ipfix_process_records_fn(vlib_main_t * vm,
@@ -635,7 +714,6 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
         if (clib_bihash_add_del_48_8(&im->flow_hash, &keyvalue, 0) != 0) {
           clib_warning("Warning: Could not remove flow form hash.");
         };
-
       } else if ((record->flow_start + active_flow_timeout) < current_time) {
         clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record);
         vec_add1(im->expired_records, *record);
@@ -660,6 +738,12 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
     vec_foreach_index(packet_idx, im->data_packets) {
       packet = vec_elt_at_index(im->data_packets, packet_idx);
       clib_warning("%U", format_netflow_v10_data_packet, packet);
+
+      /* FIXME: Instead of looping over packets and sending each one, the
+                loop should be in the function to fill up a frame with
+                multiple packets at a time */
+      ipfix_send_packet(im->vlib_main, packet);
+
       ipfix_free_v10_packet(packet);
       vec_del1(im->data_packets, packet_idx);
     };

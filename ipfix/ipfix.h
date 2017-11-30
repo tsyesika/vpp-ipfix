@@ -50,6 +50,12 @@ typedef struct {
   /* vector of flow records */
   ipfix_ip4_flow_value_t * flow_records;
 
+  /* exporter configuration */
+  ip4_address_t exporter_ip;
+  ip4_address_t collector_ip;
+  u16 exporter_port;
+  u16 collector_port;
+
   /* vector of expired flows to export */
   ipfix_ip4_flow_value_t * expired_records;
 
@@ -57,6 +63,7 @@ typedef struct {
   netflow_v10_data_packet_t *data_packets;
 
   /* convenience */
+  vlib_main_t * vlib_main;
   vnet_main_t * vnet_main;
 } ipfix_main_t;
 
