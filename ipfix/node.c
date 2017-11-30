@@ -567,6 +567,59 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   };
 }
 
+/* Write a template set to the given buffer (which must have enough
+ * space allocated) for an IPFIX packet
+ *
+ * Returns the number of bytes written to buffer
+ */
+static u64 ipfix_write_template_set(void *buffer) {
+  u16* ptr = (u16*) buffer;
+  u64 octets;
+  u64 set_idx;
+  netflow_v10_header_t *ipfix_header;
+  u16* template_header;
+  netflow_v10_template_set_t *template_set;
+  netflow_v10_template_t template;
+  netflow_v10_field_specifier_t *field_spec;
+  ipfix_make_v10_template(&template);
+
+  /* advance pointer past header, write header at end */
+  ipfix_header = (netflow_v10_header_t*) ptr;
+  template_header = ptr + sizeof(netflow_v10_header_t) / 2;
+  ptr = template_header + 2;
+  octets = sizeof(netflow_v10_header_t) + 4;
+
+  vec_foreach_index(set_idx, template.sets) {
+    template_set = vec_elt_at_index(template.sets, set_idx);
+
+    *ptr = clib_byte_swap_u16(template_set->id);
+    *(ptr + 1) = clib_byte_swap_u16(vec_len(template_set->fields));
+    ptr += 2;
+    octets += 4;
+
+    vec_foreach(field_spec, template_set->fields) {
+      *ptr = clib_byte_swap_u16(field_spec->identifier);
+      *(ptr + 1) = clib_byte_swap_u16(field_spec->size);
+      ptr += 2;
+      octets += 4;
+    };
+  }
+
+  /* write IPFIX header */
+  ipfix_header->version = clib_byte_swap_u16(10);
+  ipfix_header->byte_length = clib_byte_swap_u16(octets);
+  /* FIXME */
+  ipfix_header->timestamp = 0;
+  ipfix_header->sequence_number = 0;
+  ipfix_header->observation_domain = clib_byte_swap_u32(1);
+
+  /* write set header */
+  *template_header = clib_byte_swap_u16(2);
+  *(template_header + 1) = clib_byte_swap_u16(octets - sizeof(netflow_v10_header_t));
+
+  return octets;
+}
+
 /* Writes `packet` to `buffer`. The buffer MUST have enough space allocated to fit the entire
  * packet.
  *
@@ -613,7 +666,11 @@ static u64 ipfix_write_v10_data_packet(void *buffer, netflow_v10_data_packet_t *
   return written;
 }
 
-static void ipfix_send_packet(vlib_main_t * vm, netflow_v10_data_packet_t *packet)
+/* Send an IPFIX packet based on the given data records or send a template packet
+ * if is_template is 1
+ * FIXME: this interface is kind of awkward
+ */
+static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data_packet_t *packet)
 {
   ipfix_main_t * im = &ipfix_main;
   vlib_frame_t * nf;
@@ -669,7 +726,11 @@ static void ipfix_send_packet(vlib_main_t * vm, netflow_v10_data_packet_t *packe
   udp0->dst_port = clib_byte_swap_u16(im->collector_port);
 
   payload = (void*) (udp0 + 1);
-  payload_length = ipfix_write_v10_data_packet(payload, packet);
+  if (is_template) {
+    payload_length = ipfix_write_template_set(payload);
+  } else {
+    payload_length = ipfix_write_v10_data_packet(payload, packet);
+  }
 
   /* set all lengths at once */
   b0->current_length = sizeof(ip4_header_t) + sizeof(udp_header_t) + payload_length;
@@ -687,11 +748,13 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
                                    vlib_node_runtime_t * node,
                                    vlib_frame_t * frame)
 {
+  static u64 last_template = 0;
   f64 poll_time_remaining = PROCESS_POLL_PERIOD;
   ipfix_main_t * im = &ipfix_main;
   ipfix_ip4_flow_value_t *record;
   u64 idle_flow_timeout = 10 * 1e3;
   u64 active_flow_timeout = 30 * 1e3;
+  u64 template_timeout = 10 * 1e3;
 
   while (1) {
     poll_time_remaining = vlib_process_wait_for_event_or_clock(vm, poll_time_remaining);
@@ -699,6 +762,11 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
     clock_gettime(CLOCK_REALTIME, &current_time_clock);
     u64 current_time = current_time_clock.tv_sec * 1e3 + current_time_clock.tv_nsec / 1e6;
     u64 record_idx = 0;
+
+    if (last_template + template_timeout < current_time) {
+      ipfix_send_packet(im->vlib_main, 1, NULL);
+      last_template = current_time;
+    }
 
     vec_foreach_index(record_idx, im->flow_records) {
       record = vec_elt_at_index(im->flow_records, record_idx);
@@ -742,7 +810,7 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
       /* FIXME: Instead of looping over packets and sending each one, the
                 loop should be in the function to fill up a frame with
                 multiple packets at a time */
-      ipfix_send_packet(im->vlib_main, packet);
+      ipfix_send_packet(im->vlib_main, 0, packet);
 
       ipfix_free_v10_packet(packet);
       vec_del1(im->data_packets, packet_idx);
