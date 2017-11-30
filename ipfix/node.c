@@ -58,7 +58,8 @@ static void ipfix_make_v10_template(netflow_v10_template_t *template)
 
   /* Create a single set for these */
   netflow_v10_template_set_t set;
-  set.id = 1;
+  /* Data record sets start from #256 */
+  set.id = 256;
   set.fields = 0; // Initialize the fields vector.
 
   netflow_v10_field_specifier_t src_address;
@@ -527,7 +528,7 @@ static void ipfix_free_v10_packet(netflow_v10_data_packet_t *packet)
 static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
                                    netflow_v10_data_packet_t *packet)
 {
-  u64 byte_length = 16;
+  u64 byte_length = sizeof(netflow_v10_header_t);
   ipfix_main_t * im = &ipfix_main;
   netflow_v10_template_t template;
   ipfix_make_v10_template(&template);
@@ -556,7 +557,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
     vec_foreach(field, set->fields) {
       data_size = data_size + field->size;
     }
-    byte_length += data_size;
+    byte_length += data_size + sizeof(netflow_v10_set_header_t);
 
     netflow_v10_data_set_t active_set;
     active_set.data = malloc(data_size);
@@ -568,10 +569,10 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
       ptr = (void *)((size_t)ptr + field->size);
     };
 
-    packet->header.byte_length = ntohs(byte_length);
-
     vec_add1(packet->sets, active_set);
   };
+
+  packet->header.byte_length = ntohs(byte_length);
 }
 
 /* Write a template set to the given buffer (which must have enough
@@ -649,6 +650,7 @@ static u64 ipfix_write_v10_data_packet(void *buffer, netflow_v10_data_packet_t *
 
   memcpy(ptr, &packet->header, sizeof(netflow_v10_header_t));
   ptr = (void*)((size_t)ptr + sizeof(netflow_v10_header_t));
+  written += (u64)sizeof(netflow_v10_header_t);
 
   vec_foreach_index(set_idx, template.sets) {
     template_set = vec_elt_at_index(template.sets, set_idx);
@@ -662,8 +664,8 @@ static u64 ipfix_write_v10_data_packet(void *buffer, netflow_v10_data_packet_t *
     };
 
     // Should be able to just memcopy the entire set, data 'n all.
-    data_set->header.id = htons(1);
-    data_set->header.length = htons(data_length);
+    data_set->header.id = htons(template_set->id);
+    data_set->header.length = htons(header_length + data_length);
     memcpy(ptr, &data_set->header, header_length);
     ptr = (void*)((size_t)ptr + header_length);
     memcpy(ptr, data_set->data, data_length);
