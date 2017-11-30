@@ -528,6 +528,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
                                    netflow_v10_data_packet_t *packet)
 {
   u64 byte_length = 16;
+  ipfix_main_t * im = &ipfix_main;
   netflow_v10_template_t template;
   ipfix_make_v10_template(&template);
 
@@ -540,6 +541,12 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   packet->sets = 0;
   packet->header.version = ntohs(10);
   packet->header.timestamp = ntohs(current_time_clock.tv_sec);
+  /* FIXME: the sequence number is incremented by 1 each time because
+   * for now each packet only has a single record, but in general we
+   * will have multiple records
+   */
+  im->sequence_number += 1;
+  packet->header.sequence_number = clib_byte_swap_u32(im->sequence_number);
   /* set length field in header at end */
 
   netflow_v10_template_set_t *set;
@@ -582,6 +589,7 @@ static u64 ipfix_write_template_set(void *buffer) {
   netflow_v10_template_t template;
   netflow_v10_field_specifier_t *field_spec;
   struct timespec current_time_clock;
+  ipfix_main_t * im = &ipfix_main;
 
   ipfix_make_v10_template(&template);
   clock_gettime(CLOCK_REALTIME, &current_time_clock);
@@ -611,9 +619,8 @@ static u64 ipfix_write_template_set(void *buffer) {
   /* write IPFIX header */
   ipfix_header->version = clib_byte_swap_u16(10);
   ipfix_header->byte_length = clib_byte_swap_u16(octets);
-  /* FIXME */
   ipfix_header->timestamp = clib_byte_swap_u32(current_time_clock.tv_sec);
-  ipfix_header->sequence_number = 0;
+  ipfix_header->sequence_number = clib_byte_swap_u32(im->sequence_number);
   ipfix_header->observation_domain = clib_byte_swap_u32(1);
 
   /* write set header */

@@ -62,6 +62,9 @@ typedef struct {
   /* vector of IPFIX data packets to be transmitted */
   netflow_v10_data_packet_t *data_packets;
 
+  /* track sequence number for IPFIX packets */
+  u32 sequence_number;
+
   /* convenience */
   vlib_main_t * vlib_main;
   vnet_main_t * vnet_main;
