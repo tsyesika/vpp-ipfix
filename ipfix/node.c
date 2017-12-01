@@ -643,29 +643,18 @@ static u64 ipfix_write_template_set(void *buffer) {
 static u64 ipfix_write_v10_data_packet(void *buffer, netflow_v10_data_packet_t *packet)
 {
   netflow_v10_data_set_t *data_set;
-  netflow_v10_template_set_t *template_set;
-  netflow_v10_field_specifier_t *field_spec;
-  netflow_v10_template_t template;
-  ipfix_make_v10_template(&template);
-
   u64 written = 0;
-  u64 set_idx;
   void *ptr = buffer;
 
   memcpy(ptr, &packet->header, sizeof(netflow_v10_header_t));
   ptr = (void*)((size_t)ptr + sizeof(netflow_v10_header_t));
   written += (u64)sizeof(netflow_v10_header_t);
 
-  vec_foreach_index(set_idx, template.sets) {
-    template_set = vec_elt_at_index(template.sets, set_idx);
-    data_set = vec_elt_at_index(packet->sets, set_idx);
-
+  vec_foreach(data_set, packet->sets) {
     // Calculate the length of the set.
     size_t header_length = sizeof(netflow_v10_set_header_t);
-    size_t data_length = 0;
-    vec_foreach(field_spec, template_set->fields) {
-      data_length = data_length + field_spec->size;
-    };
+    size_t data_length = clib_byte_swap_u16(data_set->header.length)\
+      - header_length;
 
     // Should be able to just memcopy the entire set, data 'n all.
     memcpy(ptr, &data_set->header, header_length);
