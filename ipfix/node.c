@@ -554,14 +554,18 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   netflow_v10_field_specifier_t *field;
   vec_foreach(set, template.sets) {
     u64 data_size = 0;
+    u64 set_length;
     vec_foreach(field, set->fields) {
       data_size = data_size + field->size;
     }
-    byte_length += data_size + sizeof(netflow_v10_set_header_t);
+    set_length = data_size + sizeof(netflow_v10_set_header_t);
+    byte_length += set_length;
 
     netflow_v10_data_set_t active_set;
+    active_set.header.id = clib_byte_swap_u16(set->id);
+    active_set.header.length = clib_byte_swap_u16(set_length);
     active_set.data = malloc(data_size);
-    void *ptr = (size_t)active_set.data;
+    void *ptr = active_set.data;
     vec_foreach(field, set->fields) {
       memcpy(ptr, (void *)((size_t)record + field->record_offset), field->size);
 
@@ -664,14 +668,11 @@ static u64 ipfix_write_v10_data_packet(void *buffer, netflow_v10_data_packet_t *
     };
 
     // Should be able to just memcopy the entire set, data 'n all.
-    data_set->header.id = htons(template_set->id);
-    data_set->header.length = htons(header_length + data_length);
     memcpy(ptr, &data_set->header, header_length);
-    ptr = (void*)((size_t)ptr + header_length);
-    memcpy(ptr, data_set->data, data_length);
+    memcpy(ptr + header_length, data_set->data, data_length);
     written = written + (u64)header_length + (u64)data_length;
 
-    // Advence the pointer past the set.
+    // Advance the pointer past the set.
     ptr = (void *)((size_t)ptr + header_length + data_length);
   };
 
