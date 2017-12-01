@@ -542,6 +542,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   packet->sets = 0;
   packet->header.version = ntohs(10);
   packet->header.timestamp = ntohs(current_time_clock.tv_sec);
+  packet->header.observation_domain = clib_byte_swap_u32(im->observation_domain);
   /* FIXME: the sequence number is incremented by 1 each time because
    * for now each packet only has a single record, but in general we
    * will have multiple records
@@ -626,7 +627,7 @@ static u64 ipfix_write_template_set(void *buffer) {
   ipfix_header->byte_length = clib_byte_swap_u16(octets);
   ipfix_header->timestamp = clib_byte_swap_u32(current_time_clock.tv_sec);
   ipfix_header->sequence_number = clib_byte_swap_u32(im->sequence_number);
-  ipfix_header->observation_domain = clib_byte_swap_u32(1);
+  ipfix_header->observation_domain = clib_byte_swap_u32(im->observation_domain);
 
   /* write set header */
   *template_header = clib_byte_swap_u16(2);

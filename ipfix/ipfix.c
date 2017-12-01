@@ -230,6 +230,7 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->exporter_ip.data[1] = 10;
   sm->exporter_ip.data[2] = 1;
   sm->exporter_ip.data[3] = 2;
+  sm->observation_domain = 256;
 
   /* Initialize flow records vector */
   sm->flow_records = 0;
