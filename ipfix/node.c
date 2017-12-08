@@ -360,8 +360,8 @@ static void process_packet(ip4_header_t *packet) {
     memcpy(&record.flow_key, &search.key, sizeof(ipfix_ip4_flow_key_t));
     record.flow_start = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
     record.flow_end = record.flow_start;
-    record.packet_delta_count = htonl(1);
-    record.octet_delta_count = htonl(ntohs(packet->length));
+    record.packet_delta_count = clib_byte_swap_u64(1);
+    record.octet_delta_count = clib_byte_swap_u64(clib_byte_swap_u16(packet->length));
 
     vec_add1(im->flow_records, record);
     /* FIXME: this index calculation may not work when we delete
@@ -374,8 +374,11 @@ static void process_packet(ip4_header_t *packet) {
     u32 record_idx = result.value;
     ipfix_ip4_flow_value_t *record = vec_elt_at_index(im->flow_records, record_idx);
     record->flow_end = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
-    record->packet_delta_count = htonl(ntohl(record->packet_delta_count) + 1);
-    record->octet_delta_count = htonl(ntohl(record->octet_delta_count) + ntohs(packet->length));
+    record->packet_delta_count = \
+      clib_byte_swap_u64(clib_byte_swap_u64(record->packet_delta_count) + 1);
+    record->octet_delta_count = \
+      clib_byte_swap_u64(clib_byte_swap_u64(record->octet_delta_count) +\
+                         packet->length);
   }
 }
 
