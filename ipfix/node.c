@@ -719,7 +719,6 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   ip0->flags_and_fragment_offset = 0;
   ip0->ttl = 64;
   ip0->protocol = 17;
-  ip0->checksum = 0;
 
   clib_memcpy(&ip0->src_address.data, &im->exporter_ip.data, sizeof(ip4_address_t));
   clib_memcpy(&ip0->dst_address.data, &im->collector_ip.data, sizeof(ip4_address_t));
@@ -727,6 +726,7 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   udp0 = (udp_header_t*) (ip0 + 1);
   udp0->src_port = clib_byte_swap_u16(im->exporter_port);
   udp0->dst_port = clib_byte_swap_u16(im->collector_port);
+  udp0->checksum = 0;
 
   payload = (void*) (udp0 + 1);
   if (is_template) {
@@ -739,6 +739,9 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   b0->current_length = sizeof(ip4_header_t) + sizeof(udp_header_t) + payload_length;
   ip0->length = clib_byte_swap_u16(20 + 8 + payload_length);
   udp0->length = clib_byte_swap_u16(8 + payload_length);
+
+  /* finally checksum at very end */
+  ip0->checksum = ip4_header_checksum(ip0);
 
   /* set to_next index to the buffer index we allocated */
   *to_next = buffers[0];
