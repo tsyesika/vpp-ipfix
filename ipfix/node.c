@@ -713,7 +713,7 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
 
   /* VPP generates this buffer so we have to set this flag apparently?
    * https://www.mail-archive.com/vpp-dev@lists.fd.io/msg02656.html */
-  b0->flags |= VNET_BUFFER_LOCALLY_ORIGINATED;
+  b0->flags |= VNET_BUFFER_F_LOCALLY_ORIGINATED;
 
   ip0 = (ip4_header_t*) b0->data;
   ip0->ip_version_and_header_length = 0x45;
