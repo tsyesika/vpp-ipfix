@@ -358,10 +358,10 @@ static void process_packet(ip4_header_t *packet) {
     ipfix_ip4_flow_value_t record;
 
     memcpy(&record.flow_key, &search.key, sizeof(ipfix_ip4_flow_key_t));
-    record.flow_start = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+    record.flow_start = clib_byte_swap_u64(ts.tv_sec * 1e3 + ts.tv_nsec / 1e6);
     record.flow_end = record.flow_start;
     record.packet_delta_count = clib_byte_swap_u64(1);
-    record.octet_delta_count = clib_byte_swap_u64(clib_byte_swap_u16(packet->length));
+    record.octet_delta_count = (u64) packet->length << 48;
 
     vec_add1(im->flow_records, record);
     /* FIXME: this index calculation may not work when we delete
@@ -373,12 +373,11 @@ static void process_packet(ip4_header_t *packet) {
     // update record
     u32 record_idx = result.value;
     ipfix_ip4_flow_value_t *record = vec_elt_at_index(im->flow_records, record_idx);
-    record->flow_end = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
+    record->flow_end = clib_byte_swap_u64(ts.tv_sec * 1e3 + ts.tv_nsec / 1e6);
     record->packet_delta_count = \
       clib_byte_swap_u64(clib_byte_swap_u64(record->packet_delta_count) + 1);
-    record->octet_delta_count = \
-      clib_byte_swap_u64(clib_byte_swap_u64(record->octet_delta_count) +\
-                         packet->length);
+    record->octet_delta_count = record->octet_delta_count +\
+      ((u64) packet->length << 48);
   }
 }
 
@@ -771,6 +770,7 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
     clock_gettime(CLOCK_REALTIME, &current_time_clock);
     u64 current_time = current_time_clock.tv_sec * 1e3 + current_time_clock.tv_nsec / 1e6;
     u64 record_idx = 0;
+    u64 start, end;
 
     if (last_template + template_timeout < current_time) {
       ipfix_send_packet(im->vlib_main, 1, NULL);
@@ -779,8 +779,10 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
 
     vec_foreach_index(record_idx, im->flow_records) {
       record = vec_elt_at_index(im->flow_records, record_idx);
+      start = clib_byte_swap_u64(record->flow_start);
+      end = clib_byte_swap_u64(record->flow_end);
 
-      if ((record->flow_end + idle_flow_timeout) < current_time) {
+      if ((end + idle_flow_timeout) < current_time) {
         clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip4_flow, record);
         vec_add1(im->expired_records, *record);
         vec_del1(im->flow_records, record_idx);
@@ -791,12 +793,12 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
         if (clib_bihash_add_del_48_8(&im->flow_hash, &keyvalue, 0) != 0) {
           clib_warning("Warning: Could not remove flow form hash.");
         };
-      } else if ((record->flow_start + active_flow_timeout) < current_time) {
+      } else if ((start + active_flow_timeout) < current_time) {
         clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record);
         vec_add1(im->expired_records, *record);
 
-        record->flow_start = current_time;
-        record->flow_end = current_time;
+        record->flow_start = clib_byte_swap_u64(current_time);
+        record->flow_end = record->flow_start;
         record->packet_delta_count = 0;
         record->octet_delta_count = 0;
       }
