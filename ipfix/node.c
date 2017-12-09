@@ -143,8 +143,10 @@ static u8* format_ipfix_ip4_flow(u8 *s, va_list *args) {
              format_tcp_udp_port, flow_key.src_port,
              format_tcp_udp_port, flow_key.dst_port);
   s = format(s, "[Flow record] start: %U, end: %U, count: %u, octets: %u\n",
-             format_timestamp, flow_record->flow_start,
-             format_timestamp, flow_record->flow_end,
+             format_timestamp,
+             clib_byte_swap_u64(flow_record->flow_start),
+             format_timestamp,
+             clib_byte_swap_u64(flow_record->flow_end),
              ntohl(flow_record->packet_delta_count),
              ntohl(flow_record->octet_delta_count));
 
@@ -242,10 +244,10 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
           s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
           break;
         case flowStartMilliseconds:
-          s = format(s, "\t\t%U", format_timestamp, *(u64 *)data);
+          s = format(s, "\t\t%U", format_timestamp, clib_byte_swap_u64(*(u64 *)data));
           break;
         case flowEndMilliseconds:
-          s = format(s, "\t\t%U", format_timestamp, *(u64 *)data);
+          s = format(s, "\t\t%U", format_timestamp, clib_byte_swap_u64(*(u64 *)data));
           break;
         case octetDeltaCount:
           s = format(s, "\t\t%u", ntohl(*(u64 *)data));
