@@ -55,6 +55,7 @@ typedef struct {
   ip4_address_t collector_ip;
   u16 exporter_port;
   u16 collector_port;
+  u32 observation_domain;
 
   /* vector of expired flows to export */
   ipfix_ip4_flow_value_t * expired_records;

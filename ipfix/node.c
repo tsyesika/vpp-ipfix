@@ -360,8 +360,8 @@ static void process_packet(ip4_header_t *packet) {
     memcpy(&record.flow_key, &search.key, sizeof(ipfix_ip4_flow_key_t));
     record.flow_start = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
     record.flow_end = record.flow_start;
-    record.packet_delta_count = htonl(1);
-    record.octet_delta_count = htonl(ntohs(packet->length));
+    record.packet_delta_count = clib_byte_swap_u64(1);
+    record.octet_delta_count = clib_byte_swap_u64(clib_byte_swap_u16(packet->length));
 
     vec_add1(im->flow_records, record);
     /* FIXME: this index calculation may not work when we delete
@@ -374,8 +374,11 @@ static void process_packet(ip4_header_t *packet) {
     u32 record_idx = result.value;
     ipfix_ip4_flow_value_t *record = vec_elt_at_index(im->flow_records, record_idx);
     record->flow_end = ts.tv_sec * 1e3 + ts.tv_nsec / 1e6;
-    record->packet_delta_count = htonl(ntohl(record->packet_delta_count) + 1);
-    record->octet_delta_count = htonl(ntohl(record->octet_delta_count) + ntohs(packet->length));
+    record->packet_delta_count = \
+      clib_byte_swap_u64(clib_byte_swap_u64(record->packet_delta_count) + 1);
+    record->octet_delta_count = \
+      clib_byte_swap_u64(clib_byte_swap_u64(record->octet_delta_count) +\
+                         packet->length);
   }
 }
 
@@ -542,6 +545,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   packet->sets = 0;
   packet->header.version = ntohs(10);
   packet->header.timestamp = ntohs(current_time_clock.tv_sec);
+  packet->header.observation_domain = clib_byte_swap_u32(im->observation_domain);
   /* FIXME: the sequence number is incremented by 1 each time because
    * for now each packet only has a single record, but in general we
    * will have multiple records
@@ -626,7 +630,7 @@ static u64 ipfix_write_template_set(void *buffer) {
   ipfix_header->byte_length = clib_byte_swap_u16(octets);
   ipfix_header->timestamp = clib_byte_swap_u32(current_time_clock.tv_sec);
   ipfix_header->sequence_number = clib_byte_swap_u32(im->sequence_number);
-  ipfix_header->observation_domain = clib_byte_swap_u32(1);
+  ipfix_header->observation_domain = clib_byte_swap_u32(im->observation_domain);
 
   /* write set header */
   *template_header = clib_byte_swap_u16(2);
@@ -709,7 +713,7 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
 
   /* VPP generates this buffer so we have to set this flag apparently?
    * https://www.mail-archive.com/vpp-dev@lists.fd.io/msg02656.html */
-  b0->flags |= VNET_BUFFER_LOCALLY_ORIGINATED;
+  b0->flags |= VNET_BUFFER_F_LOCALLY_ORIGINATED;
 
   ip0 = (ip4_header_t*) b0->data;
   ip0->ip_version_and_header_length = 0x45;
@@ -718,7 +722,6 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   ip0->flags_and_fragment_offset = 0;
   ip0->ttl = 64;
   ip0->protocol = 17;
-  ip0->checksum = 0;
 
   clib_memcpy(&ip0->src_address.data, &im->exporter_ip.data, sizeof(ip4_address_t));
   clib_memcpy(&ip0->dst_address.data, &im->collector_ip.data, sizeof(ip4_address_t));
@@ -726,6 +729,7 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   udp0 = (udp_header_t*) (ip0 + 1);
   udp0->src_port = clib_byte_swap_u16(im->exporter_port);
   udp0->dst_port = clib_byte_swap_u16(im->collector_port);
+  udp0->checksum = 0;
 
   payload = (void*) (udp0 + 1);
   if (is_template) {
@@ -738,6 +742,9 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   b0->current_length = sizeof(ip4_header_t) + sizeof(udp_header_t) + payload_length;
   ip0->length = clib_byte_swap_u16(20 + 8 + payload_length);
   udp0->length = clib_byte_swap_u16(8 + payload_length);
+
+  /* finally checksum at very end */
+  ip0->checksum = ip4_header_checksum(ip0);
 
   /* set to_next index to the buffer index we allocated */
   *to_next = buffers[0];
