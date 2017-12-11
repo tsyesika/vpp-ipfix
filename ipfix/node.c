@@ -235,7 +235,7 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
           s = format(s, "\t\t%U", format_ip4_address, data);
           break;
         case protocolIdentifier:
-          s = format(s, "\t\t%u", ntohl(*(u16 *)data));
+          s = format(s, "\t\t%u", *(u8 *)data);
           break;
         case sourceTransportPort:
           s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
@@ -250,10 +250,10 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
           s = format(s, "\t\t%U", format_timestamp, clib_byte_swap_u64(*(u64 *)data));
           break;
         case octetDeltaCount:
-          s = format(s, "\t\t%u", ntohl(*(u64 *)data));
+          s = format(s, "\t\t%u", clib_byte_swap_u64(*(u64 *)data));
           break;
         case packetDeltaCount:
-          s = format(s, "\t\t%u", ntohl(*(u64 *)data));
+          s = format(s, "\t\t%u", clib_byte_swap_u64(*(u64 *)data));
           break;
         default:
           ASSERT(0); // This shouldn't happen - makes the packet unreadable.
