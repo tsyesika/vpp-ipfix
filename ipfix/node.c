@@ -203,6 +203,14 @@ static u8* format_netflow_v10_template(u8 *s, va_list *args) {
   return s;
 }
 
+static void ipfix_free_v10_template(netflow_v10_template_t *template) {
+  netflow_v10_template_set_t *set;
+  vec_foreach(set, template->sets) {
+    vec_free(set->fields);
+  };
+  vec_free(template->sets);
+}
+
 static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   netflow_v10_data_packet_t *packet = va_arg (*args, netflow_v10_data_packet_t*);
   netflow_v10_template_set_t *template_set;
@@ -264,6 +272,8 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   };
 
   s = format(s, "End of packet\n");
+
+  ipfix_free_v10_template(&template);
 
   return s;
 }
@@ -582,6 +592,8 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   };
 
   packet->header.byte_length = ntohs(byte_length);
+
+  ipfix_free_v10_template(&template);
 }
 
 /* Write a template set to the given buffer (which must have enough
@@ -636,6 +648,8 @@ static u64 ipfix_write_template_set(void *buffer) {
   /* write set header */
   *template_header = clib_byte_swap_u16(2);
   *(template_header + 1) = clib_byte_swap_u16(octets - sizeof(netflow_v10_header_t));
+
+  ipfix_free_v10_template(&template);
 
   return octets;
 }
