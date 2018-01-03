@@ -465,6 +465,9 @@ ipfix_node_fn (vlib_main_t * vm,
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
                     t->flow_hash = im->flow_hash;
+                    if (t->flow_records) {
+                      vec_free(t->flow_records);
+                    }
                     t->flow_records = vec_dup(im->flow_records);
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED)
@@ -474,6 +477,9 @@ ipfix_node_fn (vlib_main_t * vm,
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
                     t->flow_hash = im->flow_hash;
+                    if (t->flow_records) {
+                      vec_free(t->flow_records);
+                    }
                     t->flow_records = vec_dup(im->flow_records);
                   }
               }
@@ -515,6 +521,9 @@ ipfix_node_fn (vlib_main_t * vm,
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
             t->flow_hash = im->flow_hash;
+            if (t->flow_records) {
+              vec_free(t->flow_records);
+            }
             t->flow_records = vec_dup(im->flow_records);
           }
 
