@@ -534,7 +534,7 @@ static void ipfix_free_v10_packet(netflow_v10_data_packet_t *packet)
 {
   netflow_v10_data_set_t *set;
   vec_foreach(set, packet->sets) {
-    free(set->data);
+    clib_mem_free(set->data);
   };
   vec_free(packet->sets);
 }
@@ -579,7 +579,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
     netflow_v10_data_set_t active_set;
     active_set.header.id = clib_byte_swap_u16(set->id);
     active_set.header.length = clib_byte_swap_u16(set_length);
-    active_set.data = malloc(data_size);
+    active_set.data = clib_mem_alloc(data_size);
     void *ptr = active_set.data;
     vec_foreach(field, set->fields) {
       memcpy(ptr, (void *)((size_t)record + field->record_offset), field->size);
