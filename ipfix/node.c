@@ -228,7 +228,7 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   vec_foreach_index(set_idx, template.sets) {
       template_set = vec_elt_at_index(template.sets, set_idx);
       data_set = vec_elt_at_index(packet->sets, set_idx);
-      format(s, "\tSet %u:\n", template_set->id);
+      s = format(s, "\tSet %u:\n", template_set->id);
 
       data = data_set->data;
       u64 field_idx;
