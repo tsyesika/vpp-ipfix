@@ -86,7 +86,9 @@ int ipfix_flow_meter_enable_disable (ipfix_main_t * sm, u32 sw_if_index,
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
   
-  vnet_feature_enable_disable ("ip4-unicast", "ipfix",
+  vnet_feature_enable_disable ("ip4-unicast", "ipfix-meter-ip4",
+                               sw_if_index, enable_disable, 0, 0);
+  vnet_feature_enable_disable ("ip6-unicast", "ipfix-meter-ip6",
                                sw_if_index, enable_disable, 0, 0);
 
   return rv;
@@ -233,7 +235,8 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->observation_domain = 256;
 
   /* Initialize flow records vector */
-  sm->flow_records = 0;
+  sm->flow_records_ip4 = 0;
+  sm->flow_records_ip6 = 0;
 
   /* Initialize expired flow records vector */
   sm->expired_records = 0;
@@ -241,7 +244,8 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   /* Initialize IPFIX data packets vector */
   sm->data_packets = 0;
 
-  clib_bihash_init_48_8(&sm->flow_hash, "flowhash", 1048, 128<<20);
+  clib_bihash_init_16_8(&sm->flow_hash_ip4, "flowhash", 1048, 128<<20);
+  clib_bihash_init_48_8(&sm->flow_hash_ip6, "flowhash", 1048, 128<<20);
 
   error = ipfix_plugin_api_hookup (vm);
 
@@ -256,11 +260,18 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
 VLIB_INIT_FUNCTION (ipfix_init);
 
 /**
- * @brief Hook the ipfix plugin into the VPP graph hierarchy.
+ * @brief Hook the ipfix plugins into the VPP graph hierarchy.
  */
-VNET_FEATURE_INIT (ipfix, static) = 
+VNET_FEATURE_INIT (ipfix_meter_ip4, static) =
 {
   .arc_name = "ip4-unicast",
-  .node_name = "ipfix",
+  .node_name = "ipfix-meter-ip4",
   .runs_before = VNET_FEATURES ("ip4-lookup"),
+};
+
+VNET_FEATURE_INIT (ipfix_meter_ip6, static) =
+{
+  .arc_name = "ip6-unicast",
+  .node_name = "ipfix-meter-ip6",
+  .runs_before = VNET_FEATURES ("ip6-lookup"),
 };

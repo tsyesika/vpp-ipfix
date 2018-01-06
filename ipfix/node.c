@@ -19,6 +19,7 @@
 #include <vlib/vlib.h>
 #include <vnet/ip/format.h>
 #include <vnet/ip/ip4_packet.h>
+#include <vnet/ip/ip6_packet.h>
 #include <vnet/ethernet/ethernet.h>
 #include <vnet/udp/udp_packet.h>
 #include <vnet/tcp/tcp_packet.h>
@@ -26,6 +27,7 @@
 #include <vnet/pg/pg.h>
 #include <vppinfra/error.h>
 #include <vppinfra/vec.h>
+#include <vppinfra/bihash_16_8.h>
 #include <vppinfra/bihash_48_8.h>
 #include <ipfix/ipfix.h>
 
@@ -41,7 +43,7 @@ ipfix_main_t ipfix_main;
 typedef struct {
   u32 next_index;
   u32 sw_if_index;
-  clib_bihash_48_8_t flow_hash;
+  clib_bihash_16_8_t flow_hash;
   ipfix_ip4_flow_value_t *flow_records;
 } ipfix_trace_t;
 
@@ -299,7 +301,8 @@ static u8 * format_ipfix_trace (u8 * s, va_list * args)
   return s;
 }
 
-vlib_node_registration_t ipfix_node;
+vlib_node_registration_t ipfix_meter_ip4_node;
+vlib_node_registration_t ipfix_meter_ip6_node;
 
 #define foreach_ipfix_error \
 _(SWAPPED, "Error (fixme)")
@@ -322,12 +325,17 @@ typedef enum {
   IPFIX_N_NEXT,
 } ipfix_next_t;
 
-static void insert_packet_flow_hash(clib_bihash_kv_48_8_t *keyvalue) {
+static void insert_packet_flow_hash_ip4(clib_bihash_kv_16_8_t *keyvalue) {
   ipfix_main_t * im = &ipfix_main;
-  clib_bihash_add_del_48_8(&im->flow_hash, keyvalue, 1);
+  clib_bihash_add_del_16_8(&im->flow_hash_ip4, keyvalue, 1);
 }
 
-static void create_flow_key(ipfix_ip4_flow_key_t *flow_key, ip4_header_t *packet) {
+static void insert_packet_flow_hash_ip6(clib_bihash_kv_48_8_t *keyvalue) {
+  ipfix_main_t * im = &ipfix_main;
+  clib_bihash_add_del_48_8(&im->flow_hash_ip6, keyvalue, 1);
+}
+
+static void create_flow_key_ip4(ipfix_ip4_flow_key_t *flow_key, ip4_header_t *packet) {
   flow_key->src = packet->src_address;
   flow_key->dst = packet->dst_address;
   flow_key->protocol = packet->protocol;
@@ -351,17 +359,40 @@ static void create_flow_key(ipfix_ip4_flow_key_t *flow_key, ip4_header_t *packet
   }
 }
 
-static void process_packet(ip4_header_t *packet) {
+static void create_flow_key_ip6(ipfix_ip6_flow_key_t *flow_key, ip6_header_t *packet) {
+  flow_key->src = packet->src_address;
+  flow_key->dst = packet->dst_address;
+  flow_key->protocol = packet->protocol;
+
+  switch (packet->protocol) {
+    udp_header_t *udp;
+    tcp_header_t *tcp;
+  case UDP_PROTOCOL:
+    udp = ip6_next_header(packet);
+    flow_key->src_port = udp->src_port;
+    flow_key->dst_port = udp->dst_port;
+    break;
+  case TCP_PROTOCOL:
+    tcp = ip6_next_header(packet);
+    flow_key->src_port = tcp->src_port;
+    flow_key->dst_port = tcp->dst_port;
+    break;
+  default:
+    flow_key->src_port = 0;
+    flow_key->dst_port = 0;
+  }
+}
+
+static void process_packet_ip4(ip4_header_t *packet) {
   ipfix_main_t * im = &ipfix_main;
-  clib_bihash_kv_48_8_t search, result;
+  clib_bihash_kv_16_8_t search, result;
   int status;
 
-  memset(&search, 0, sizeof(clib_bihash_kv_48_8_t));
-  memset(&result, 0, sizeof(clib_bihash_kv_48_8_t));
+  memset(&search, 0, sizeof(clib_bihash_kv_16_8_t));
+  memset(&result, 0, sizeof(clib_bihash_kv_16_8_t));
 
-  create_flow_key((ipfix_ip4_flow_key_t*) &search.key, packet);
-
-  status = clib_bihash_search_48_8(&im->flow_hash, &search, &result);
+  create_flow_key_ip4((ipfix_ip4_flow_key_t*) &search.key, packet);
+  status = clib_bihash_search_16_8(&im->flow_hash_ip4, &search, &result);
 
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME, &ts);
@@ -375,16 +406,16 @@ static void process_packet(ip4_header_t *packet) {
     record.packet_delta_count = clib_byte_swap_u64(1);
     record.octet_delta_count = (u64) packet->length << 48;
 
-    vec_add1(im->flow_records, record);
+    vec_add1(im->flow_records_ip4, record);
     /* FIXME: this index calculation may not work when we delete
        records later */
-    search.value = vec_len(im->flow_records) - 1;
+    search.value = vec_len(im->flow_records_ip4) - 1;
 
-    insert_packet_flow_hash(&search);
+    insert_packet_flow_hash_ip4(&search);
   } else {
     // update record
     u32 record_idx = result.value;
-    ipfix_ip4_flow_value_t *record = vec_elt_at_index(im->flow_records, record_idx);
+    ipfix_ip4_flow_value_t *record = vec_elt_at_index(im->flow_records_ip4, record_idx);
     record->flow_end = clib_byte_swap_u64(ts.tv_sec * 1e3 + ts.tv_nsec / 1e6);
     record->packet_delta_count = \
       clib_byte_swap_u64(clib_byte_swap_u64(record->packet_delta_count) + 1);
@@ -393,10 +424,49 @@ static void process_packet(ip4_header_t *packet) {
   }
 }
 
-static uword
-ipfix_node_fn (vlib_main_t * vm,
-                  vlib_node_runtime_t * node,
-                  vlib_frame_t * frame)
+static void process_packet_ip6(ip6_header_t *packet) {
+  ipfix_main_t * im = &ipfix_main;
+  clib_bihash_kv_48_8_t search, result;
+  int status;
+
+  memset(&search, 0, sizeof(clib_bihash_kv_48_8_t));
+  memset(&result, 0, sizeof(clib_bihash_kv_48_8_t));
+
+  create_flow_key_ip6((ipfix_ip6_flow_key_t*) &search.key, packet);
+  status = clib_bihash_search_48_8(&im->flow_hash_ip6, &search, &result);
+
+  struct timespec ts;
+  clock_gettime(CLOCK_REALTIME, &ts);
+
+  if (status < 0) {
+    ipfix_ip6_flow_value_t record;
+
+    memcpy(&record.flow_key, &search.key, sizeof(ipfix_ip6_flow_key_t));
+    record.flow_start = clib_byte_swap_u64(ts.tv_sec * 1e3 + ts.tv_nsec / 1e6);
+    record.flow_end = record.flow_start;
+    record.packet_delta_count = clib_byte_swap_u64(1);
+    record.octet_delta_count = (u64) packet->payload_length << 48;
+
+    vec_add1(im->flow_records_ip6, record);
+    search.value = vec_len(im->flow_records_ip6) - 1;
+
+    insert_packet_flow_hash_ip6(&search);
+  } else {
+    u32 record_idx = result.value;
+    ipfix_ip6_flow_value_t *record = vec_elt_at_index(im->flow_records_ip6, record_idx);
+    record->flow_end = clib_byte_swap_u64(ts.tv_sec * 1e3 + ts.tv_nsec / 1e6);
+    record->packet_delta_count = \
+      clib_byte_swap_u64(clib_byte_swap_u64(record->packet_delta_count) + 1);
+    record->octet_delta_count = record->octet_delta_count +\
+      ((u64) packet->payload_length << 48);
+  }
+}
+
+always_inline uword
+ipfix_meter_fn_inline (vlib_main_t * vm,
+                       vlib_node_runtime_t * node,
+                       vlib_frame_t * frame,
+                       u8 is_ipv6)
 {
   u32 n_left_from, * from, * to_next;
   ipfix_next_t next_index;
@@ -418,7 +488,8 @@ ipfix_node_fn (vlib_main_t * vm,
           u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 next1 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0, sw_if_index1;
-          ip4_header_t *ip0, *ip1;
+          ip4_header_t *ip4_0, *ip4_1;
+          ip6_header_t *ip6_0, *ip6_1;
           u32 bi0, bi1;
           vlib_buffer_t * b0, * b1;
 
@@ -447,14 +518,20 @@ ipfix_node_fn (vlib_main_t * vm,
           b0 = vlib_get_buffer (vm, bi0);
           b1 = vlib_get_buffer (vm, bi1);
 
-          ip0 = vlib_buffer_get_current (b0);
-          ip1 = vlib_buffer_get_current (b1);
-
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
           sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
 
-          process_packet(ip0);
-          process_packet(ip1);
+          if (is_ipv6) {
+            ip6_0 = vlib_buffer_get_current (b0);
+            ip6_1 = vlib_buffer_get_current (b1);
+            process_packet_ip6(ip6_0);
+            process_packet_ip6(ip6_1);
+          } else {
+            ip4_0 = vlib_buffer_get_current (b0);
+            ip4_1 = vlib_buffer_get_current (b1);
+            process_packet_ip4(ip4_0);
+            process_packet_ip4(ip4_1);
+          }
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)))
             {
@@ -464,11 +541,11 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b0, sizeof (*t));
                     t->sw_if_index = sw_if_index0;
                     t->next_index = next0;
-                    t->flow_hash = im->flow_hash;
+                    t->flow_hash = im->flow_hash_ip4;
                     if (t->flow_records) {
                       vec_free(t->flow_records);
                     }
-                    t->flow_records = vec_dup(im->flow_records);
+                    t->flow_records = vec_dup(im->flow_records_ip4);
                   }
                 if (b1->flags & VLIB_BUFFER_IS_TRACED)
                   {
@@ -476,11 +553,11 @@ ipfix_node_fn (vlib_main_t * vm,
                       vlib_add_trace (vm, node, b1, sizeof (*t));
                     t->sw_if_index = sw_if_index1;
                     t->next_index = next1;
-                    t->flow_hash = im->flow_hash;
+                    t->flow_hash = im->flow_hash_ip4;
                     if (t->flow_records) {
                       vec_free(t->flow_records);
                     }
-                    t->flow_records = vec_dup(im->flow_records);
+                    t->flow_records = vec_dup(im->flow_records_ip4);
                   }
               }
 
@@ -496,7 +573,8 @@ ipfix_node_fn (vlib_main_t * vm,
           vlib_buffer_t * b0;
           u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
           u32 sw_if_index0;
-          ip4_header_t *ip0;
+          ip4_header_t *ip4_0;
+          ip6_header_t *ip6_0;
 
           /* speculatively enqueue b0 to the current next frame */
           bi0 = from[0];
@@ -507,12 +585,15 @@ ipfix_node_fn (vlib_main_t * vm,
           n_left_to_next -= 1;
 
           b0 = vlib_get_buffer (vm, bi0);
-
-          ip0 = vlib_buffer_get_current (b0);
-
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
-          process_packet(ip0);
+          if (is_ipv6) {
+            ip6_0 = vlib_buffer_get_current (b0);
+            process_packet_ip6(ip6_0);
+          } else {
+            ip4_0 = vlib_buffer_get_current (b0);
+            process_packet_ip4(ip4_0);
+          }
 
           if (PREDICT_FALSE((node->flags & VLIB_NODE_FLAG_TRACE)
                             && (b0->flags & VLIB_BUFFER_IS_TRACED))) {
@@ -520,11 +601,11 @@ ipfix_node_fn (vlib_main_t * vm,
                vlib_add_trace (vm, node, b0, sizeof (*t));
             t->sw_if_index = sw_if_index0;
             t->next_index = next0;
-            t->flow_hash = im->flow_hash;
+            t->flow_hash = im->flow_hash_ip4;
             if (t->flow_records) {
               vec_free(t->flow_records);
             }
-            t->flow_records = vec_dup(im->flow_records);
+            t->flow_records = vec_dup(im->flow_records_ip4);
           }
 
           /* verify speculative enqueue, maybe switch current next frame */
@@ -802,20 +883,21 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
       last_template = current_time;
     }
 
-    vec_foreach_index(record_idx, im->flow_records) {
-      record = vec_elt_at_index(im->flow_records, record_idx);
+    /* TODO: make this work for IPv6 too */
+    vec_foreach_index(record_idx, im->flow_records_ip4) {
+      record = vec_elt_at_index(im->flow_records_ip4, record_idx);
       start = clib_byte_swap_u64(record->flow_start);
       end = clib_byte_swap_u64(record->flow_end);
 
       if ((end + idle_flow_timeout) < current_time) {
         clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip4_flow, record);
         vec_add1(im->expired_records, *record);
-        vec_del1(im->flow_records, record_idx);
+        vec_del1(im->flow_records_ip4, record_idx);
 
-        clib_bihash_kv_48_8_t keyvalue;
-        memset(&keyvalue, 0, sizeof(clib_bihash_kv_48_8_t));
+        clib_bihash_kv_16_8_t keyvalue;
+        memset(&keyvalue, 0, sizeof(clib_bihash_kv_16_8_t));
         memcpy(&keyvalue.key, &record->flow_key, sizeof(ipfix_ip4_flow_key_t));
-        if (clib_bihash_add_del_48_8(&im->flow_hash, &keyvalue, 0) != 0) {
+        if (clib_bihash_add_del_16_8(&im->flow_hash_ip4, &keyvalue, 0) != 0) {
           clib_warning("Warning: Could not remove flow form hash.");
         };
       } else if ((start + active_flow_timeout) < current_time) {
@@ -859,6 +941,17 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
   return 0;
 }
 
+static void ipfix_meter_ip4_fn(vlib_main_t * vm,
+                               vlib_node_runtime_t * node,
+                               vlib_frame_t * frame) {
+  ipfix_meter_fn_inline(vm, node, frame, 0);
+}
+
+static void ipfix_meter_ip6_fn(vlib_main_t * vm,
+                               vlib_node_runtime_t * node,
+                               vlib_frame_t * frame) {
+  ipfix_meter_fn_inline(vm, node, frame, 1);
+}
 
 VLIB_REGISTER_NODE (ipfix_process_records) = {
   .function = ipfix_process_records_fn,
@@ -866,10 +959,9 @@ VLIB_REGISTER_NODE (ipfix_process_records) = {
   .type = VLIB_NODE_TYPE_PROCESS,
 };
 
-
-VLIB_REGISTER_NODE (ipfix_node) = {
-  .function = ipfix_node_fn,
-  .name = "ipfix",
+VLIB_REGISTER_NODE (ipfix_meter_ip4_node) = {
+  .function = ipfix_meter_ip4_fn,
+  .name = "ipfix-meter-ip4",
   .vector_size = sizeof (u32),
   .format_trace = format_ipfix_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
@@ -882,5 +974,23 @@ VLIB_REGISTER_NODE (ipfix_node) = {
   /* edit / add dispositions here */
   .next_nodes = {
         [IPFIX_NEXT_INTERFACE_OUTPUT] = "ip4-lookup",
+  },
+};
+
+VLIB_REGISTER_NODE (ipfix_meter_ip6_node) = {
+  .function = ipfix_meter_ip6_fn,
+  .name = "ipfix",
+  .vector_size = sizeof (u32),
+  .format_trace = format_ipfix_trace,
+  .type = VLIB_NODE_TYPE_INTERNAL,
+
+  .n_errors = ARRAY_LEN(ipfix_error_strings),
+  .error_strings = ipfix_error_strings,
+
+  .n_next_nodes = IPFIX_N_NEXT,
+
+  /* edit / add dispositions here */
+  .next_nodes = {
+    [IPFIX_NEXT_INTERFACE_OUTPUT] = "ip6-lookup",
   },
 };
