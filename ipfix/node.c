@@ -858,6 +858,70 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   vlib_put_frame_to_node(vm, next_node->index, nf);
 }
 
+static void ipfix_expire_records(u64 current_time) {
+  ipfix_ip4_flow_value_t *record_ip4;
+  ipfix_ip6_flow_value_t *record_ip6;
+  u64 record_idx;
+  u64 start, end;
+  clib_bihash_kv_16_8_t keyvalue_ip4;
+  clib_bihash_kv_48_8_t keyvalue_ip6;
+  ipfix_main_t * im = &ipfix_main;
+
+  vec_foreach_index(record_idx, im->flow_records_ip4) {
+    record_ip4 = vec_elt_at_index(im->flow_records_ip4, record_idx);
+    start = clib_byte_swap_u64(record_ip4->flow_start);
+    end = clib_byte_swap_u64(record_ip4->flow_end);
+
+    if ((end + im->idle_flow_timeout) < current_time) {
+      clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip4_flow, record_ip4);
+      vec_add1(im->expired_records_ip4, *record_ip4);
+      vec_del1(im->flow_records_ip4, record_idx);
+
+      memset(&keyvalue_ip4, 0, sizeof(clib_bihash_kv_16_8_t));
+      memcpy(&keyvalue_ip4.key, &record_ip4->flow_key, sizeof(ipfix_ip4_flow_key_t));
+
+      if (clib_bihash_add_del_16_8(&im->flow_hash_ip4, &keyvalue_ip4, 0) != 0) {
+        clib_warning("Warning: Could not remove flow form hash.");
+      };
+    } else if ((start + im->active_flow_timeout) < current_time) {
+      clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record_ip4);
+      vec_add1(im->expired_records_ip4, *record_ip4);
+
+      record_ip4->flow_start = clib_byte_swap_u64(current_time);
+      record_ip4->flow_end = record_ip4->flow_start;
+      record_ip4->packet_delta_count = 0;
+      record_ip4->octet_delta_count = 0;
+    }
+  };
+
+  vec_foreach_index(record_idx, im->flow_records_ip6) {
+    record_ip6 = vec_elt_at_index(im->flow_records_ip6, record_idx);
+    start = clib_byte_swap_u64(record_ip6->flow_start);
+    end = clib_byte_swap_u64(record_ip6->flow_end);
+
+    if ((end + im->idle_flow_timeout) < current_time) {
+      /* clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip6_flow, record); */
+      vec_add1(im->expired_records_ip6, *record_ip6);
+      vec_del1(im->flow_records_ip6, record_idx);
+
+      memset(&keyvalue_ip6, 0, sizeof(clib_bihash_kv_48_8_t));
+      memcpy(&keyvalue_ip6.key, &record_ip6->flow_key, sizeof(ipfix_ip6_flow_key_t));
+
+      if (clib_bihash_add_del_48_8(&im->flow_hash_ip6, &keyvalue_ip6, 0) != 0) {
+        clib_warning("Warning: Could not remove flow form hash.");
+      };
+    } else if ((start + im->active_flow_timeout) < current_time) {
+      /*clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip6_flow, record); */
+      vec_add1(im->expired_records_ip6, *record_ip6);
+
+      record_ip6->flow_start = clib_byte_swap_u64(current_time);
+      record_ip6->flow_end = record_ip6->flow_start;
+      record_ip6->packet_delta_count = 0;
+      record_ip6->octet_delta_count = 0;
+    }
+  };
+}
+
 static uword ipfix_process_records_fn(vlib_main_t * vm,
                                    vlib_node_runtime_t * node,
                                    vlib_frame_t * frame)
@@ -865,58 +929,37 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
   static u64 last_template = 0;
   f64 poll_time_remaining = PROCESS_POLL_PERIOD;
   ipfix_main_t * im = &ipfix_main;
-  ipfix_ip4_flow_value_t *record;
-  u64 idle_flow_timeout = 10 * 1e3;
-  u64 active_flow_timeout = 30 * 1e3;
-  u64 template_timeout = 10 * 1e3;
 
   while (1) {
-    poll_time_remaining = vlib_process_wait_for_event_or_clock(vm, poll_time_remaining);
     struct timespec current_time_clock;
+    u64 record_idx = 0;
+    poll_time_remaining = vlib_process_wait_for_event_or_clock(vm, poll_time_remaining);
     clock_gettime(CLOCK_REALTIME, &current_time_clock);
     u64 current_time = current_time_clock.tv_sec * 1e3 + current_time_clock.tv_nsec / 1e6;
-    u64 record_idx = 0;
-    u64 start, end;
 
-    if (last_template + template_timeout < current_time) {
+    if (last_template + im->template_timeout < current_time) {
       ipfix_send_packet(im->vlib_main, 1, NULL);
       last_template = current_time;
     }
 
-    /* TODO: make this work for IPv6 too */
-    vec_foreach_index(record_idx, im->flow_records_ip4) {
-      record = vec_elt_at_index(im->flow_records_ip4, record_idx);
-      start = clib_byte_swap_u64(record->flow_start);
-      end = clib_byte_swap_u64(record->flow_end);
+    ipfix_expire_records(current_time);
 
-      if ((end + idle_flow_timeout) < current_time) {
-        clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip4_flow, record);
-        vec_add1(im->expired_records, *record);
-        vec_del1(im->flow_records_ip4, record_idx);
-
-        clib_bihash_kv_16_8_t keyvalue;
-        memset(&keyvalue, 0, sizeof(clib_bihash_kv_16_8_t));
-        memcpy(&keyvalue.key, &record->flow_key, sizeof(ipfix_ip4_flow_key_t));
-        if (clib_bihash_add_del_16_8(&im->flow_hash_ip4, &keyvalue, 0) != 0) {
-          clib_warning("Warning: Could not remove flow form hash.");
-        };
-      } else if ((start + active_flow_timeout) < current_time) {
-        clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record);
-        vec_add1(im->expired_records, *record);
-
-        record->flow_start = clib_byte_swap_u64(current_time);
-        record->flow_end = record->flow_start;
-        record->packet_delta_count = 0;
-        record->octet_delta_count = 0;
-      }
-    };
-
-    vec_foreach_index(record_idx, im->expired_records) {
+    vec_foreach_index(record_idx, im->expired_records_ip4) {
+      ipfix_ip4_flow_value_t *record;
       netflow_v10_data_packet_t packet;
-      record = vec_elt_at_index(im->expired_records, record_idx);
+      record = vec_elt_at_index(im->expired_records_ip4, record_idx);
       ipfix_build_v10_packet(record, &packet);
       vec_add1(im->data_packets, packet);
-      vec_del1(im->expired_records, record_idx);
+      vec_del1(im->expired_records_ip4, record_idx);
+    };
+
+    vec_foreach_index(record_idx, im->expired_records_ip6) {
+      ipfix_ip6_flow_value_t *record;
+      netflow_v10_data_packet_t packet;
+      record = vec_elt_at_index(im->expired_records_ip6, record_idx);
+      /* ipfix_build_v10_packet(record, &packet); */
+      vec_add1(im->data_packets, packet);
+      vec_del1(im->expired_records_ip6, record_idx);
     };
 
     netflow_v10_data_packet_t *packet;

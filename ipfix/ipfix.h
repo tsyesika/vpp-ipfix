@@ -75,9 +75,13 @@ typedef struct {
   u16 exporter_port;
   u16 collector_port;
   u32 observation_domain;
+  u64 idle_flow_timeout;
+  u64 active_flow_timeout;
+  u64 template_timeout;
 
   /* vector of expired flows to export */
-  ipfix_ip4_flow_value_t * expired_records;
+  ipfix_ip4_flow_value_t * expired_records_ip4;
+  ipfix_ip6_flow_value_t * expired_records_ip6;
 
   /* vector of IPFIX data packets to be transmitted */
   netflow_v10_data_packet_t *data_packets;

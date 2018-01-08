@@ -233,13 +233,17 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->exporter_ip.data[2] = 1;
   sm->exporter_ip.data[3] = 2;
   sm->observation_domain = 256;
+  sm->idle_flow_timeout = 10 * 1e3;
+  sm->active_flow_timeout = 30 * 1e3;
+  sm->template_timeout = 10 * 1e3;
 
   /* Initialize flow records vector */
   sm->flow_records_ip4 = 0;
   sm->flow_records_ip6 = 0;
 
   /* Initialize expired flow records vector */
-  sm->expired_records = 0;
+  sm->expired_records_ip4 = 0;
+  sm->expired_records_ip6 = 0;
 
   /* Initialize IPFIX data packets vector */
   sm->data_packets = 0;
