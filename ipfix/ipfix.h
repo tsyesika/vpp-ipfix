@@ -79,6 +79,10 @@ typedef struct {
   u64 active_flow_timeout;
   u64 template_timeout;
 
+  /* allocate templates to use in nodes just once */
+  netflow_v10_template_t * template_ip4;
+  netflow_v10_template_t * template_ip6;
+
   /* vector of expired flows to export */
   ipfix_ip4_flow_value_t * expired_records_ip4;
   ipfix_ip6_flow_value_t * expired_records_ip6;

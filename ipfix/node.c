@@ -47,80 +47,6 @@ typedef struct {
   ipfix_ip4_flow_value_t *flow_records;
 } ipfix_trace_t;
 
-/* TODO: Replace with the user configurable template.
- * Parsed from the CSV file describing the fields
- */
-static void ipfix_make_v10_template(netflow_v10_template_t *template)
-{
-  /* Initialize an empty flow key to calculate the offsets against. */
-  ipfix_ip4_flow_value_t record;
-
-  /* Initialize the set vector. */
-  template->sets = 0;
-
-  /* Create a single set for these */
-  netflow_v10_template_set_t set;
-  /* Data record sets start from #256 */
-  set.id = 256;
-  set.fields = 0; // Initialize the fields vector.
-
-  netflow_v10_field_specifier_t src_address;
-  src_address.identifier = sourceIPv4Address;
-  src_address.size = sizeof(u8) * 4;
-  src_address.record_offset = (size_t)&record.flow_key.src - (size_t)&record;
-  vec_add1(set.fields, src_address);
-
-  netflow_v10_field_specifier_t dst_address;
-  dst_address.identifier = destinationIPv4Address;
-  dst_address.size = sizeof(u8) * 4;
-  dst_address.record_offset = (size_t)&record.flow_key.dst - (size_t)&record;
-  vec_add1(set.fields, dst_address);
-
-  netflow_v10_field_specifier_t protocol;
-  protocol.identifier = protocolIdentifier;
-  protocol.size = sizeof(u8);
-  protocol.record_offset = (size_t)&record.flow_key.protocol - (size_t)&record;
-  vec_add1(set.fields, protocol);
-
-  netflow_v10_field_specifier_t src_port;
-  src_port.identifier = sourceTransportPort;
-  src_port.size = sizeof(u16);
-  src_port.record_offset = (size_t)&record.flow_key.src_port - (size_t)&record;
-  vec_add1(set.fields, src_port);
-
-  netflow_v10_field_specifier_t dst_port;
-  dst_port.identifier = destinationTransportPort;
-  dst_port.size = sizeof(u16);
-  dst_port.record_offset = (size_t)&record.flow_key.dst_port - (size_t)&record;
-  vec_add1(set.fields, dst_port);
-
-  netflow_v10_field_specifier_t flow_start;
-  flow_start.identifier = flowStartMilliseconds;
-  flow_start.size = sizeof(u64);
-  flow_start.record_offset = (size_t)&record.flow_start - (size_t)&record;
-  vec_add1(set.fields, flow_start);
-
-  netflow_v10_field_specifier_t flow_end;
-  flow_end.identifier = flowEndMilliseconds;
-  flow_end.size = sizeof(u64);
-  flow_end.record_offset = (size_t)&record.flow_end - (size_t)&record;
-  vec_add1(set.fields, flow_end);
-
-  netflow_v10_field_specifier_t octet_count;
-  octet_count.identifier = octetDeltaCount;
-  octet_count.size = sizeof(u64);
-  octet_count.record_offset = (size_t)&record.octet_delta_count - (size_t)&record;
-  vec_add1(set.fields, octet_count);
-
-  netflow_v10_field_specifier_t packet_count;
-  packet_count.identifier = packetDeltaCount;
-  packet_count.size = sizeof(u64);
-  packet_count.record_offset = (size_t)&record.packet_delta_count - (size_t)&record;
-  vec_add1(set.fields, packet_count);
-
-  vec_add1(template->sets, set);
-}
-
 static u8* format_timestamp(u8 *s, va_list *args) {
   time_t timestamp = va_arg (*args, time_t) / 1e3;
   struct tm time;
@@ -205,21 +131,11 @@ static u8* format_netflow_v10_template(u8 *s, va_list *args) {
   return s;
 }
 
-static void ipfix_free_v10_template(netflow_v10_template_t *template) {
-  netflow_v10_template_set_t *set;
-  vec_foreach(set, template->sets) {
-    vec_free(set->fields);
-  };
-  vec_free(template->sets);
-}
-
 static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   netflow_v10_data_packet_t *packet = va_arg (*args, netflow_v10_data_packet_t*);
   netflow_v10_template_set_t *template_set;
   netflow_v10_data_set_t *data_set;
   netflow_v10_field_specifier_t *field_spec;
-  netflow_v10_template_t template;
-  ipfix_make_v10_template(&template);
 
   s = format(s, "Netflow V10 Data Packet:\n");
 
@@ -227,8 +143,8 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   // safe to use the same indices.
   u64 set_idx;
   void *data;
-  vec_foreach_index(set_idx, template.sets) {
-      template_set = vec_elt_at_index(template.sets, set_idx);
+  vec_foreach_index(set_idx, packet->template->sets) {
+      template_set = vec_elt_at_index(packet->template->sets, set_idx);
       data_set = vec_elt_at_index(packet->sets, set_idx);
       s = format(s, "\tSet %u:\n", template_set->id);
 
@@ -274,8 +190,6 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
   };
 
   s = format(s, "End of packet\n");
-
-  ipfix_free_v10_template(&template);
 
   return s;
 }
@@ -629,15 +543,21 @@ static void ipfix_free_v10_packet(netflow_v10_data_packet_t *packet)
   vec_free(packet->sets);
 }
 
-static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
-                                   netflow_v10_data_packet_t *packet)
+/* the first argument is either an ipv4 or ipv6 flow record */
+static void ipfix_build_v10_packet(void *record,
+                                   netflow_v10_data_packet_t *packet,
+                                   u8 is_ipv6)
 {
   u64 byte_length = sizeof(netflow_v10_header_t);
   ipfix_main_t * im = &ipfix_main;
-  netflow_v10_template_t template;
-  ipfix_make_v10_template(&template);
 
-  clib_warning("%U", format_netflow_v10_template, &template);
+  if (is_ipv6) {
+    packet->template = im->template_ip6;
+  } else {
+    packet->template = im->template_ip4;
+  }
+
+  clib_warning("%U", format_netflow_v10_template, packet->template);
 
   struct timespec current_time_clock;
   clock_gettime(CLOCK_REALTIME, &current_time_clock);
@@ -657,7 +577,7 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
 
   netflow_v10_template_set_t *set;
   netflow_v10_field_specifier_t *field;
-  vec_foreach(set, template.sets) {
+  vec_foreach(set, packet->template->sets) {
     u64 data_size = 0;
     u64 set_length;
     vec_foreach(field, set->fields) {
@@ -682,8 +602,6 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
   };
 
   packet->header.byte_length = ntohs(byte_length);
-
-  ipfix_free_v10_template(&template);
 }
 
 /* Write a template set to the given buffer (which must have enough
@@ -691,19 +609,18 @@ static void ipfix_build_v10_packet(ipfix_ip4_flow_value_t *record,
  *
  * Returns the number of bytes written to buffer
  */
-static u64 ipfix_write_template_set(void *buffer) {
+static u64 ipfix_write_template_set(void *buffer,
+                                    netflow_v10_template_t *template) {
   u16* ptr = (u16*) buffer;
   u64 octets;
   u64 set_idx;
   netflow_v10_header_t *ipfix_header;
   u16* template_header;
   netflow_v10_template_set_t *template_set;
-  netflow_v10_template_t template;
   netflow_v10_field_specifier_t *field_spec;
   struct timespec current_time_clock;
   ipfix_main_t * im = &ipfix_main;
 
-  ipfix_make_v10_template(&template);
   clock_gettime(CLOCK_REALTIME, &current_time_clock);
 
   /* advance pointer past header, write header at end */
@@ -712,8 +629,8 @@ static u64 ipfix_write_template_set(void *buffer) {
   ptr = template_header + 2;
   octets = sizeof(netflow_v10_header_t) + 4;
 
-  vec_foreach_index(set_idx, template.sets) {
-    template_set = vec_elt_at_index(template.sets, set_idx);
+  vec_foreach_index(set_idx, template->sets) {
+    template_set = vec_elt_at_index(template->sets, set_idx);
 
     *ptr = clib_byte_swap_u16(template_set->id);
     *(ptr + 1) = clib_byte_swap_u16(vec_len(template_set->fields));
@@ -738,8 +655,6 @@ static u64 ipfix_write_template_set(void *buffer) {
   /* write set header */
   *template_header = clib_byte_swap_u16(2);
   *(template_header + 1) = clib_byte_swap_u16(octets - sizeof(netflow_v10_header_t));
-
-  ipfix_free_v10_template(&template);
 
   return octets;
 }
@@ -838,7 +753,7 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
 
   payload = (void*) (udp0 + 1);
   if (is_template) {
-    payload_length = ipfix_write_template_set(payload);
+    payload_length = ipfix_write_template_set(payload, im->template_ip4);
   } else {
     payload_length = ipfix_write_v10_data_packet(payload, packet);
   }
@@ -948,7 +863,7 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
       ipfix_ip4_flow_value_t *record;
       netflow_v10_data_packet_t packet;
       record = vec_elt_at_index(im->expired_records_ip4, record_idx);
-      ipfix_build_v10_packet(record, &packet);
+      ipfix_build_v10_packet(record, &packet, 0);
       vec_add1(im->data_packets, packet);
       vec_del1(im->expired_records_ip4, record_idx);
     };
@@ -957,7 +872,7 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
       ipfix_ip6_flow_value_t *record;
       netflow_v10_data_packet_t packet;
       record = vec_elt_at_index(im->expired_records_ip6, record_idx);
-      /* ipfix_build_v10_packet(record, &packet); */
+      ipfix_build_v10_packet(record, &packet, 1);
       vec_add1(im->data_packets, packet);
       vec_del1(im->expired_records_ip6, record_idx);
     };

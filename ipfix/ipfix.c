@@ -200,6 +200,103 @@ setup_message_id_table (ipfix_main_t * sm, api_main_t *am)
 #undef _
 }
 
+/* TODO: Replace with the user configurable template.
+ * Parsed from the CSV file describing the fields
+ */
+static void ipfix_make_v10_template(netflow_v10_template_t *template,
+                                    u8 is_ipv6)
+{
+  /* Initialize an empty flow key to calculate the offsets against. */
+  ipfix_ip4_flow_value_t record_ip4;
+  ipfix_ip6_flow_value_t record_ip6;
+
+  /* Initialize the set vector. */
+  template->sets = 0;
+
+  /* Create a single set for these */
+  netflow_v10_template_set_t set;
+  /* Data record sets start from #256 */
+  set.id = 256 + is_ipv6;
+  set.fields = 0; // Initialize the fields vector.
+
+  netflow_v10_field_specifier_t src_address;
+  netflow_v10_field_specifier_t dst_address;
+  netflow_v10_field_specifier_t protocol;
+  netflow_v10_field_specifier_t src_port;
+  netflow_v10_field_specifier_t dst_port;
+  netflow_v10_field_specifier_t flow_start;
+  netflow_v10_field_specifier_t flow_end;
+  netflow_v10_field_specifier_t octet_count;
+  netflow_v10_field_specifier_t packet_count;
+
+  if (is_ipv6) {
+    src_address.identifier = sourceIPv6Address;
+    src_address.size = sizeof(u8) * 16;
+
+    dst_address.identifier = destinationIPv6Address;
+    dst_address.size = sizeof(u8) * 16;
+
+    src_address.record_offset = (size_t)&record_ip6.flow_key.src - (size_t)&record_ip6;
+    dst_address.record_offset = (size_t)&record_ip6.flow_key.dst - (size_t)&record_ip6;
+    protocol.record_offset = (size_t)&record_ip6.flow_key.protocol - (size_t)&record_ip6;
+    src_port.record_offset = (size_t)&record_ip6.flow_key.src_port - (size_t)&record_ip6;
+    dst_port.record_offset = (size_t)&record_ip6.flow_key.dst_port - (size_t)&record_ip6;
+    flow_start.record_offset = (size_t)&record_ip6.flow_start - (size_t)&record_ip6;
+    flow_end.record_offset = (size_t)&record_ip6.flow_end - (size_t)&record_ip6;
+    octet_count.record_offset = (size_t)&record_ip6.octet_delta_count - (size_t)&record_ip6;
+    packet_count.record_offset = (size_t)&record_ip6.packet_delta_count - (size_t)&record_ip6;
+  } else {
+    src_address.identifier = sourceIPv4Address;
+    src_address.size = sizeof(u8) * 4;
+
+    dst_address.identifier = destinationIPv4Address;
+    dst_address.size = sizeof(u8) * 4;
+
+    src_address.record_offset = (size_t)&record_ip4.flow_key.src - (size_t)&record_ip4;
+    dst_address.record_offset = (size_t)&record_ip4.flow_key.dst - (size_t)&record_ip4;
+    protocol.record_offset = (size_t)&record_ip4.flow_key.protocol - (size_t)&record_ip4;
+    src_port.record_offset = (size_t)&record_ip4.flow_key.src_port - (size_t)&record_ip4;
+    dst_port.record_offset = (size_t)&record_ip4.flow_key.dst_port - (size_t)&record_ip4;
+    flow_start.record_offset = (size_t)&record_ip4.flow_start - (size_t)&record_ip4;
+    flow_end.record_offset = (size_t)&record_ip4.flow_end - (size_t)&record_ip4;
+    octet_count.record_offset = (size_t)&record_ip4.octet_delta_count - (size_t)&record_ip4;
+    packet_count.record_offset = (size_t)&record_ip4.packet_delta_count - (size_t)&record_ip4;
+  }
+
+  protocol.identifier = protocolIdentifier;
+  protocol.size = sizeof(u8);
+
+  src_port.identifier = sourceTransportPort;
+  src_port.size = sizeof(u16);
+
+  dst_port.identifier = destinationTransportPort;
+  dst_port.size = sizeof(u16);
+
+  flow_start.identifier = flowStartMilliseconds;
+  flow_start.size = sizeof(u64);
+
+  flow_end.identifier = flowEndMilliseconds;
+  flow_end.size = sizeof(u64);
+
+  octet_count.identifier = octetDeltaCount;
+  octet_count.size = sizeof(u64);
+
+  packet_count.identifier = packetDeltaCount;
+  packet_count.size = sizeof(u64);
+
+  vec_add1(set.fields, src_address);
+  vec_add1(set.fields, dst_address);
+  vec_add1(set.fields, protocol);
+  vec_add1(set.fields, src_port);
+  vec_add1(set.fields, dst_port);
+  vec_add1(set.fields, flow_start);
+  vec_add1(set.fields, flow_end);
+  vec_add1(set.fields, octet_count);
+  vec_add1(set.fields, packet_count);
+
+  vec_add1(template->sets, set);
+}
+
 /**
  * @brief Initialize the ipfix plugin.
  */
@@ -236,6 +333,13 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->idle_flow_timeout = 10 * 1e3;
   sm->active_flow_timeout = 30 * 1e3;
   sm->template_timeout = 10 * 1e3;
+
+  /* Initialize templates */
+  /* FIXME: do we need to free these at some point? */
+  sm->template_ip4 = clib_mem_alloc(sizeof(netflow_v10_template_t));
+  sm->template_ip6 = clib_mem_alloc(sizeof(netflow_v10_template_t));
+  ipfix_make_v10_template(sm->template_ip4, 0);
+  ipfix_make_v10_template(sm->template_ip6, 1);
 
   /* Initialize flow records vector */
   sm->flow_records_ip4 = 0;

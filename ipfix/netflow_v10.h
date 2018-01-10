@@ -6,8 +6,10 @@
 #define protocolIdentifier 4
 #define sourceTransportPort 7
 #define sourceIPv4Address 8
+#define sourceIPv6Address 27
 #define destinationTransportPort 11
 #define destinationIPv4Address 12
+#define destinationIPv6Address 28
 #define flowStartMilliseconds 152
 #define flowEndMilliseconds 153
 
@@ -56,5 +58,6 @@ typedef struct {
 
 typedef struct {
   netflow_v10_header_t header;
+  netflow_v10_template_t *template;
   netflow_v10_data_set_t *sets;
 } netflow_v10_data_packet_t;
