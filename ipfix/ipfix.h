@@ -51,7 +51,7 @@ typedef struct {
 } ipfix_ip4_flow_value_t;
 
 typedef struct {
-  ipfix_ip4_flow_key_t flow_key;
+  ipfix_ip6_flow_key_t flow_key;
   u64 flow_start;
   u64 flow_end;
   u64 packet_delta_count;

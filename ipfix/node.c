@@ -81,6 +81,27 @@ static u8* format_ipfix_ip4_flow(u8 *s, va_list *args) {
   return s;
 }
 
+static u8* format_ipfix_ip6_flow(u8 *s, va_list *args) {
+  ipfix_ip6_flow_value_t *flow_record = va_arg (*args, ipfix_ip6_flow_value_t*);
+  ipfix_ip6_flow_key_t flow_key = flow_record->flow_key;
+
+  s = format(s, "\n[Flow key] src: %U, dst: %U, protocol: %u, src port: %U, dst port: %U\n",
+             format_ip6_address, &flow_key.src,
+             format_ip6_address, &flow_key.dst,
+             flow_key.protocol,
+             format_tcp_udp_port, flow_key.src_port,
+             format_tcp_udp_port, flow_key.dst_port);
+  s = format(s, "[Flow record] start: %U, end: %U, count: %u, octets: %u\n",
+             format_timestamp,
+             clib_byte_swap_u64(flow_record->flow_start),
+             format_timestamp,
+             clib_byte_swap_u64(flow_record->flow_end),
+             ntohl(flow_record->packet_delta_count),
+             ntohl(flow_record->octet_delta_count));
+
+  return s;
+}
+
 static u8* format_netflow_v10_template(u8 *s, va_list *args) {
   netflow_v10_template_t *template = va_arg (*args, netflow_v10_template_t*);
   netflow_v10_template_set_t *set;
@@ -101,11 +122,17 @@ static u8* format_netflow_v10_template(u8 *s, va_list *args) {
       case sourceIPv4Address:
         s = format(s, "sourceIPv4Address (%u)\t\t", field->identifier);
         break;
+      case sourceIPv6Address:
+        s = format(s, "sourceIPv6Address (%u)\t\t", field->identifier);
+        break;
       case destinationTransportPort:
         s = format(s, "destinationTransportPort (%u)\t", field->identifier);
         break;
       case destinationIPv4Address:
         s = format(s, "destinationIPv4Address (%u)\t", field->identifier);
+        break;
+      case destinationIPv6Address:
+        s = format(s, "destinationIPv6Address (%u)\t", field->identifier);
         break;
       case flowStartMilliseconds:
         s = format(s, "flowStartMilliseconds (%u)\t", field->identifier);
@@ -156,6 +183,10 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
         switch (field_spec->identifier) {
         case sourceIPv4Address:
           s = format(s, "\t\t%U", format_ip4_address, (ip4_address_t *)data_set->data);
+          break;
+        case sourceIPv6Address:
+        case destinationIPv6Address:
+          s = format(s, "\t\t%U", format_ip6_address, data);
           break;
         case destinationIPv4Address:
           s = format(s, "\t\t%U", format_ip4_address, data);
@@ -609,25 +640,18 @@ static void ipfix_build_v10_packet(void *record,
  *
  * Returns the number of bytes written to buffer
  */
-static u64 ipfix_write_template_set(void *buffer,
+static u64 ipfix_write_template_set(u16 *buffer,
                                     netflow_v10_template_t *template) {
-  u16* ptr = (u16*) buffer;
   u64 octets;
   u64 set_idx;
-  netflow_v10_header_t *ipfix_header;
-  u16* template_header;
+  u16 *template_header, *ptr;
   netflow_v10_template_set_t *template_set;
   netflow_v10_field_specifier_t *field_spec;
-  struct timespec current_time_clock;
-  ipfix_main_t * im = &ipfix_main;
 
-  clock_gettime(CLOCK_REALTIME, &current_time_clock);
-
-  /* advance pointer past header, write header at end */
-  ipfix_header = (netflow_v10_header_t*) ptr;
-  template_header = ptr + sizeof(netflow_v10_header_t) / 2;
+  /* advance pointer past header, write header at end of function */
+  template_header = buffer;
   ptr = template_header + 2;
-  octets = sizeof(netflow_v10_header_t) + 4;
+  octets = 4;
 
   vec_foreach_index(set_idx, template->sets) {
     template_set = vec_elt_at_index(template->sets, set_idx);
@@ -645,16 +669,34 @@ static u64 ipfix_write_template_set(void *buffer,
     };
   }
 
+  /* write set header */
+  *template_header = clib_byte_swap_u16(2);
+  *(template_header + 1) = clib_byte_swap_u16(octets);
+
+  return octets;
+}
+
+/* Write all relevant templates into an IPFIX packet, the given buffer must
+ * have enough space allocated. Returns the length of the payload. */
+static u64 ipfix_write_template_packet(u8* buffer) {
+  ipfix_main_t * im = &ipfix_main;
+  u64 octets = 0;
+  netflow_v10_header_t *ipfix_header = (netflow_v10_header_t*) buffer;
+  u8* template_ptr = buffer + sizeof(netflow_v10_header_t);
+
+  struct timespec current_time_clock;
+  clock_gettime(CLOCK_REALTIME, &current_time_clock);
+
+  octets += ipfix_write_template_set((u16*)template_ptr, im->template_ip4);
+  octets += ipfix_write_template_set((u16*)(template_ptr + octets), im->template_ip6);
+
   /* write IPFIX header */
+  octets += sizeof(netflow_v10_header_t);
   ipfix_header->version = clib_byte_swap_u16(10);
   ipfix_header->byte_length = clib_byte_swap_u16(octets);
   ipfix_header->timestamp = clib_byte_swap_u32(current_time_clock.tv_sec);
   ipfix_header->sequence_number = clib_byte_swap_u32(im->sequence_number);
   ipfix_header->observation_domain = clib_byte_swap_u32(im->observation_domain);
-
-  /* write set header */
-  *template_header = clib_byte_swap_u16(2);
-  *(template_header + 1) = clib_byte_swap_u16(octets - sizeof(netflow_v10_header_t));
 
   return octets;
 }
@@ -753,7 +795,7 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
 
   payload = (void*) (udp0 + 1);
   if (is_template) {
-    payload_length = ipfix_write_template_set(payload, im->template_ip4);
+    payload_length = ipfix_write_template_packet(payload);
   } else {
     payload_length = ipfix_write_v10_data_packet(payload, packet);
   }
@@ -815,7 +857,7 @@ static void ipfix_expire_records(u64 current_time) {
     end = clib_byte_swap_u64(record_ip6->flow_end);
 
     if ((end + im->idle_flow_timeout) < current_time) {
-      /* clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip6_flow, record); */
+      clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip6_flow, record_ip6);
       vec_add1(im->expired_records_ip6, *record_ip6);
       vec_del1(im->flow_records_ip6, record_idx);
 
@@ -826,7 +868,7 @@ static void ipfix_expire_records(u64 current_time) {
         clib_warning("Warning: Could not remove flow form hash.");
       };
     } else if ((start + im->active_flow_timeout) < current_time) {
-      /*clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip6_flow, record); */
+      clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip6_flow, record_ip6);
       vec_add1(im->expired_records_ip6, *record_ip6);
 
       record_ip6->flow_start = clib_byte_swap_u64(current_time);
@@ -937,7 +979,7 @@ VLIB_REGISTER_NODE (ipfix_meter_ip4_node) = {
 
 VLIB_REGISTER_NODE (ipfix_meter_ip6_node) = {
   .function = ipfix_meter_ip6_fn,
-  .name = "ipfix",
+  .name = "ipfix-meter-ip6",
   .vector_size = sizeof (u32),
   .format_trace = format_ipfix_trace,
   .type = VLIB_NODE_TYPE_INTERNAL,
