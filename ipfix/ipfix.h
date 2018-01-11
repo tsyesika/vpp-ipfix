@@ -18,6 +18,7 @@
 #include <vnet/vnet.h>
 #include <vnet/ip/ip.h>
 #include <vnet/ethernet/ethernet.h>
+#include <vppinfra/bihash_16_8.h>
 #include <vppinfra/bihash_48_8.h>
 #include <vppinfra/hash.h>
 #include <vppinfra/error.h>
@@ -34,6 +35,14 @@ typedef struct {
 } ipfix_ip4_flow_key_t;
 
 typedef struct {
+  ip6_address_t src;
+  ip6_address_t dst;
+  u8 protocol;
+  u16 src_port;
+  u16 dst_port;
+} ipfix_ip6_flow_key_t;
+
+typedef struct {
   ipfix_ip4_flow_key_t flow_key;
   u64 flow_start; //milliseconds;
   u64 flow_end; // milliseconds;
@@ -42,13 +51,23 @@ typedef struct {
 } ipfix_ip4_flow_value_t;
 
 typedef struct {
+  ipfix_ip6_flow_key_t flow_key;
+  u64 flow_start;
+  u64 flow_end;
+  u64 packet_delta_count;
+  u64 octet_delta_count;
+} ipfix_ip6_flow_value_t;
+
+typedef struct {
   /* API message ID base */
   u16 msg_id_base;
 
-  clib_bihash_48_8_t flow_hash;
+  clib_bihash_16_8_t flow_hash_ip4;
+  clib_bihash_48_8_t flow_hash_ip6;
 
   /* vector of flow records */
-  ipfix_ip4_flow_value_t * flow_records;
+  ipfix_ip4_flow_value_t * flow_records_ip4;
+  ipfix_ip6_flow_value_t * flow_records_ip6;
 
   /* exporter configuration */
   ip4_address_t exporter_ip;
@@ -56,9 +75,17 @@ typedef struct {
   u16 exporter_port;
   u16 collector_port;
   u32 observation_domain;
+  u64 idle_flow_timeout;
+  u64 active_flow_timeout;
+  u64 template_timeout;
+
+  /* allocate templates to use in nodes just once */
+  netflow_v10_template_t * template_ip4;
+  netflow_v10_template_t * template_ip6;
 
   /* vector of expired flows to export */
-  ipfix_ip4_flow_value_t * expired_records;
+  ipfix_ip4_flow_value_t * expired_records_ip4;
+  ipfix_ip6_flow_value_t * expired_records_ip6;
 
   /* vector of IPFIX data packets to be transmitted */
   netflow_v10_data_packet_t *data_packets;

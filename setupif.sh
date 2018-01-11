@@ -5,7 +5,8 @@ case "$1" in
          ip link add name vpp1out type veth peer name vpp1host
          ip link set dev vpp1out up
          ip link set dev vpp1host up
-         ip addr add 10.10.1.1/24 dev vpp1host;;
+         ip addr add 10.10.1.1/24 dev vpp1host
+         ip addr add fde4:8dba:82e1::1/64 dev vpp1host;;
      "remove")
          ip link set dev vpp1out down
          ip link set dev vpp1host down
