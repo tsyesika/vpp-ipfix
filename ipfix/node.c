@@ -182,33 +182,25 @@ static u8* format_netflow_v10_data_packet(u8 *s, va_list *args) {
 
         switch (field_spec->identifier) {
         case sourceIPv4Address:
-          s = format(s, "\t\t%U", format_ip4_address, (ip4_address_t *)data_set->data);
+        case destinationIPv4Address:
+          s = format(s, "\t\t%U", format_ip4_address, data);
           break;
         case sourceIPv6Address:
         case destinationIPv6Address:
           s = format(s, "\t\t%U", format_ip6_address, data);
           break;
-        case destinationIPv4Address:
-          s = format(s, "\t\t%U", format_ip4_address, data);
-          break;
         case protocolIdentifier:
           s = format(s, "\t\t%u", *(u8 *)data);
           break;
         case sourceTransportPort:
-          s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
-          break;
         case destinationTransportPort:
           s = format(s, "\t\t%U", format_tcp_udp_port, *(u16 *)data);
           break;
         case flowStartMilliseconds:
-          s = format(s, "\t\t%U", format_timestamp, clib_byte_swap_u64(*(u64 *)data));
-          break;
         case flowEndMilliseconds:
           s = format(s, "\t\t%U", format_timestamp, clib_byte_swap_u64(*(u64 *)data));
           break;
         case octetDeltaCount:
-          s = format(s, "\t\t%u", clib_byte_swap_u64(*(u64 *)data));
-          break;
         case packetDeltaCount:
           s = format(s, "\t\t%u", clib_byte_swap_u64(*(u64 *)data));
           break;
