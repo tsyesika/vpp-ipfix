@@ -140,14 +140,52 @@ flow_meter_enable_disable_command_fn (vlib_main_t * vm,
   return 0;
 }
 
+static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
+                                            unformat_input_t * input,
+                                            vlib_cli_command_t * cmd)
+{
+  clib_error_t *error = 0;
+  u32 val = 0;
+  ipfix_main_t * im = &ipfix_main;
+
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+    if (unformat(input, "timeout")) {
+      if (unformat(input, "idle %u", &val)) {
+        im->idle_flow_timeout = val;
+      } else if (unformat(input, "active %u", &val)) {
+        im->active_flow_timeout = val;
+      } else if (unformat(input, "template %u", &val)) {
+        im->template_timeout = val;
+      } else {
+        error = clib_error_return(0,
+                                  "expected timeout command, got `%U`",
+                                  format_unformat_error, input);
+      }
+    } else {
+      error = clib_error_return(0, "unknown command");
+      break;
+    }
+  }
+
+  return error;
+}
+
 /**
  * @brief CLI command to enable/disable the ipfix plugin.
  */
-VLIB_CLI_COMMAND (sr_content_command, static) = {
-    .path = "ipfix flow-meter",
-    .short_help = 
-    "ipfix flow-meter <interface-name> [disable]",
-    .function = flow_meter_enable_disable_command_fn,
+VLIB_CLI_COMMAND (ipfix_enable_command, static) = {
+  .path = "ipfix flow-meter",
+  .short_help = "ipfix flow-meter <interface-name> [disable]",
+  .function = flow_meter_enable_disable_command_fn,
+};
+
+/**
+ * @brief CLI command to set options for the ipfix plugin.
+ */
+VLIB_CLI_COMMAND (ipfix_set_command, static) = {
+  .path = "set ipfix",
+  .short_help = "set ipfix timeout {idle|active|template} <seconds>",
+  .function = ipfix_set_command_fn,
 };
 
 /**
