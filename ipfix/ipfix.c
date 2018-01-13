@@ -25,6 +25,8 @@
 #include <vlibmemory/api.h>
 #include <vlibsocket/api.h>
 
+#include <vppinfra/random.h>
+
 /* define message IDs */
 #include <ipfix/ipfix_msg_enum.h>
 
@@ -144,7 +146,6 @@ static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
                                             unformat_input_t * input,
                                             vlib_cli_command_t * cmd)
 {
-  clib_error_t *error = 0;
   u32 val = 0;
   ipfix_main_t * im = &ipfix_main;
 
@@ -157,17 +158,32 @@ static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
       } else if (unformat(input, "template %u", &val)) {
         im->template_timeout = val * 1e3;
       } else {
-        error = clib_error_return(0,
-                                  "expected timeout command, got `%U`",
-                                  format_unformat_error, input);
+        return clib_error_return(0,
+                                 "expected timeout command, got `%U`",
+                                 format_unformat_error, input);
+      }
+    } else if (unformat(input, "port")) {
+      if (unformat(input, "exporter %u", &val)) {
+        if (val > 65536) {
+          return clib_error_return(0, "expected valid port");
+        }
+        im->exporter_port = val;
+      } else if (unformat(input, "collector %u")) {
+        if (val > 65536) {
+          return clib_error_return(0, "expected valid port");
+        }
+        im->collector_port = val;
+      } else {
+        return clib_error_return(0,
+                                 "expected port command, got `%U`",
+                                 format_unformat_error, input);
       }
     } else {
-      error = clib_error_return(0, "unknown command");
-      break;
+      return clib_error_return(0, "unknown command");
     }
   }
 
-  return error;
+  return 0;
 }
 
 /**
@@ -343,6 +359,7 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   ipfix_main_t * sm = &ipfix_main;
   clib_error_t * error = 0;
   u8 * name;
+  u32 rand_port;
 
   sm->vnet_main =  vnet_get_main ();
 
@@ -355,9 +372,17 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   /* store this node's vlib_main in the ipfix_main_t */
   sm->vlib_main = vm;
 
+  sm->random_seed = random_default_seed();
+
   /* Initialize configuration values */
-  /* FIXME: don't hardcdoe */
-  sm->exporter_port = 49152;
+  while (1) {
+    rand_port = random_u32(&sm->random_seed);
+    rand_port &= 0xFFFF;
+    if (rand_port >= 49152) {
+      break;
+    }
+  }
+  sm->exporter_port = rand_port;
   sm->collector_port = 4739;
   sm->collector_ip.data[0] = 10;
   sm->collector_ip.data[1] = 10;

@@ -93,6 +93,8 @@ typedef struct {
   /* track sequence number for IPFIX packets */
   u32 sequence_number;
 
+  u32 random_seed;
+
   /* convenience */
   vlib_main_t * vlib_main;
   vnet_main_t * vnet_main;
