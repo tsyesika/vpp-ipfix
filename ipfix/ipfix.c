@@ -368,9 +368,9 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->exporter_ip.data[2] = 1;
   sm->exporter_ip.data[3] = 2;
   sm->observation_domain = 256;
-  sm->idle_flow_timeout = 10 * 1e3;
-  sm->active_flow_timeout = 30 * 1e3;
-  sm->template_timeout = 10 * 1e3;
+  sm->idle_flow_timeout = 300 * 1e3;
+  sm->active_flow_timeout = 120 * 1e3;
+  sm->template_timeout = 600 * 1e3;
 
   /* Initialize templates */
   /* FIXME: do we need to free these at some point? */

@@ -4,3 +4,4 @@ set int ip address host-vpp1out fde4:8dba:82e1::2/64
 set int state host-vpp1out up
 trace add af-packet-input 30
 ipfix flow-meter host-vpp1out
+set ipfix timeout idle 10 timeout template 10 timeout active 30
