@@ -151,11 +151,11 @@ static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
     if (unformat(input, "timeout")) {
       if (unformat(input, "idle %u", &val)) {
-        im->idle_flow_timeout = val;
+        im->idle_flow_timeout = val * 1e3;
       } else if (unformat(input, "active %u", &val)) {
-        im->active_flow_timeout = val;
+        im->active_flow_timeout = val * 1e3;
       } else if (unformat(input, "template %u", &val)) {
-        im->template_timeout = val;
+        im->template_timeout = val * 1e3;
       } else {
         error = clib_error_return(0,
                                   "expected timeout command, got `%U`",
