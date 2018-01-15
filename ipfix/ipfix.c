@@ -17,6 +17,7 @@
  * @brief IPFIX Plugin, plugin API / trace / CLI handling.
  */
 
+#include <vnet/ip/ip4_packet.h>
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
 #include <ipfix/ipfix.h>
@@ -147,6 +148,7 @@ static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
                                             vlib_cli_command_t * cmd)
 {
   u32 val = 0;
+  ip4_address_t addr;
   ipfix_main_t * im = &ipfix_main;
 
   while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
@@ -173,6 +175,16 @@ static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
           return clib_error_return(0, "expected valid port");
         }
         im->collector_port = val;
+      } else {
+        return clib_error_return(0,
+                                 "expected port command, got `%U`",
+                                 format_unformat_error, input);
+      }
+    } else if (unformat(input, "ip")) {
+      if (unformat(input, "exporter %U", unformat_ip4_address, &addr)) {
+        im->exporter_ip = addr;
+      } else if (unformat(input, "collector %U", unformat_ip4_address, &addr)) {
+        im->collector_ip = addr;
       } else {
         return clib_error_return(0,
                                  "expected port command, got `%U`",
