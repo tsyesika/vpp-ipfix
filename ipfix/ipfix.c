@@ -190,6 +190,8 @@ static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
                                  "expected port command, got `%U`",
                                  format_unformat_error, input);
       }
+    } else if (unformat(input, "observation-domain %u", &val)) {
+      im->observation_domain = val;
     } else {
       return clib_error_return(0, "unknown command");
     }
