@@ -214,7 +214,7 @@ VLIB_CLI_COMMAND (ipfix_enable_command, static) = {
  */
 VLIB_CLI_COMMAND (ipfix_set_command, static) = {
   .path = "set ipfix",
-  .short_help = "set ipfix timeout {idle|active|template} <seconds>",
+  .short_help = "set ipfix [timeout {idle|active|template} <seconds>] [{port|ip} {collector|exporter} <value>] [observation-domain <num>]",
   .function = ipfix_set_command_fn,
 };
 
