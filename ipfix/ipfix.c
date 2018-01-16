@@ -386,16 +386,11 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   /* store this node's vlib_main in the ipfix_main_t */
   sm->vlib_main = vm;
 
+  /* Create random port between 49152 to 0xFFFF */
   sm->random_seed = random_default_seed();
+  rand_port = (random_u32(&sm->random_seed) % (0xFFFF - 49152)) + 49152;
 
   /* Initialize configuration values */
-  while (1) {
-    rand_port = random_u32(&sm->random_seed);
-    rand_port &= 0xFFFF;
-    if (rand_port >= 49152) {
-      break;
-    }
-  }
   sm->exporter_port = rand_port;
   sm->collector_port = 4739;
   sm->collector_ip.data[0] = 10;
