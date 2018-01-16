@@ -17,6 +17,7 @@
  * @brief IPFIX Plugin, plugin API / trace / CLI handling.
  */
 
+#include <vnet/ip/ip4_packet.h>
 #include <vnet/vnet.h>
 #include <vnet/plugin/plugin.h>
 #include <ipfix/ipfix.h>
@@ -24,6 +25,8 @@
 #include <vlibapi/api.h>
 #include <vlibmemory/api.h>
 #include <vlibsocket/api.h>
+
+#include <vppinfra/random.h>
 
 /* define message IDs */
 #include <ipfix/ipfix_msg_enum.h>
@@ -140,14 +143,79 @@ flow_meter_enable_disable_command_fn (vlib_main_t * vm,
   return 0;
 }
 
+static clib_error_t * ipfix_set_command_fn (vlib_main_t * vm,
+                                            unformat_input_t * input,
+                                            vlib_cli_command_t * cmd)
+{
+  u32 val = 0;
+  ip4_address_t addr;
+  ipfix_main_t * im = &ipfix_main;
+
+  while (unformat_check_input (input) != UNFORMAT_END_OF_INPUT) {
+    if (unformat(input, "timeout")) {
+      if (unformat(input, "idle %u", &val)) {
+        im->idle_flow_timeout = val * 1e3;
+      } else if (unformat(input, "active %u", &val)) {
+        im->active_flow_timeout = val * 1e3;
+      } else if (unformat(input, "template %u", &val)) {
+        im->template_timeout = val * 1e3;
+      } else {
+        return clib_error_return(0,
+                                 "expected timeout command, got `%U`",
+                                 format_unformat_error, input);
+      }
+    } else if (unformat(input, "port")) {
+      if (unformat(input, "exporter %u", &val)) {
+        if (val > 65536) {
+          return clib_error_return(0, "expected valid port");
+        }
+        im->exporter_port = val;
+      } else if (unformat(input, "collector %u")) {
+        if (val > 65536) {
+          return clib_error_return(0, "expected valid port");
+        }
+        im->collector_port = val;
+      } else {
+        return clib_error_return(0,
+                                 "expected port command, got `%U`",
+                                 format_unformat_error, input);
+      }
+    } else if (unformat(input, "ip")) {
+      if (unformat(input, "exporter %U", unformat_ip4_address, &addr)) {
+        im->exporter_ip = addr;
+      } else if (unformat(input, "collector %U", unformat_ip4_address, &addr)) {
+        im->collector_ip = addr;
+      } else {
+        return clib_error_return(0,
+                                 "expected port command, got `%U`",
+                                 format_unformat_error, input);
+      }
+    } else if (unformat(input, "observation-domain %u", &val)) {
+      im->observation_domain = val;
+    } else {
+      return clib_error_return(0, "unknown command");
+    }
+  }
+
+  return 0;
+}
+
 /**
  * @brief CLI command to enable/disable the ipfix plugin.
  */
-VLIB_CLI_COMMAND (sr_content_command, static) = {
-    .path = "ipfix flow-meter",
-    .short_help = 
-    "ipfix flow-meter <interface-name> [disable]",
-    .function = flow_meter_enable_disable_command_fn,
+VLIB_CLI_COMMAND (ipfix_enable_command, static) = {
+  .path = "ipfix flow-meter",
+  .short_help = "ipfix flow-meter <interface-name> [disable]",
+  .function = flow_meter_enable_disable_command_fn,
+};
+
+/**
+ * @brief CLI command to set options for the ipfix plugin.
+ */
+VLIB_CLI_COMMAND (ipfix_set_command, static) = {
+  .path = "set ipfix",
+  .short_help = "set ipfix [timeout {idle|active|template} <seconds>] [{port|ip} {collector|exporter} <value>] [observation-domain <num>]",
+  .function = ipfix_set_command_fn,
 };
 
 /**
@@ -305,6 +373,7 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   ipfix_main_t * sm = &ipfix_main;
   clib_error_t * error = 0;
   u8 * name;
+  u32 rand_port;
 
   sm->vnet_main =  vnet_get_main ();
 
@@ -317,9 +386,12 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   /* store this node's vlib_main in the ipfix_main_t */
   sm->vlib_main = vm;
 
+  /* Create random port between 49152 to 0xFFFF */
+  sm->random_seed = random_default_seed();
+  rand_port = (random_u32(&sm->random_seed) % (0xFFFF - 49152)) + 49152;
+
   /* Initialize configuration values */
-  /* FIXME: don't hardcdoe */
-  sm->exporter_port = 49152;
+  sm->exporter_port = rand_port;
   sm->collector_port = 4739;
   sm->collector_ip.data[0] = 10;
   sm->collector_ip.data[1] = 10;
@@ -330,9 +402,9 @@ static clib_error_t * ipfix_init (vlib_main_t * vm)
   sm->exporter_ip.data[2] = 1;
   sm->exporter_ip.data[3] = 2;
   sm->observation_domain = 256;
-  sm->idle_flow_timeout = 10 * 1e3;
-  sm->active_flow_timeout = 30 * 1e3;
-  sm->template_timeout = 10 * 1e3;
+  sm->idle_flow_timeout = 300 * 1e3;
+  sm->active_flow_timeout = 120 * 1e3;
+  sm->template_timeout = 600 * 1e3;
 
   /* Initialize templates */
   /* FIXME: do we need to free these at some point? */
