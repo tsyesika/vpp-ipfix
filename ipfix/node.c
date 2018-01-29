@@ -29,6 +29,7 @@
 #include <vppinfra/vec.h>
 #include <vppinfra/bihash_16_8.h>
 #include <vppinfra/bihash_48_8.h>
+#include <vppinfra/elog.h>
 #include <ipfix/ipfix.h>
 
 
@@ -359,6 +360,25 @@ static void process_packet_ip4(ip4_header_t *packet) {
     record->octet_delta_count = record->octet_delta_count +\
       ((u64) packet->length << 48);
   }
+  ELOG_TYPE_DECLARE (e) = {
+    .format = "[IPFIX] processed packet v: 4, src: %d.%d.%d.%d:%d, dst: %d.%d.%d.%d:%d, status: %s",
+    .format_args = "i1i1i1i1i2i1i1i1i1i2t1",
+    .n_enum_strings = 2,
+    .enum_strings = { "new", "update" },
+  };
+
+  struct {
+    u8 src[4]; u16 src_port;
+    u8 dst[4]; u16 dst_port;
+    u8 status
+  } * ed;
+  ed = ELOG_DATA (&vlib_global_main.elog_main, e);
+  ipfix_ip4_flow_key_t *flow_key = &search.key;
+  memcpy(ed->src, flow_key->src.as_u8, sizeof(u8) * 4);
+  memcpy(ed->dst, flow_key->dst.as_u8, sizeof(u8) * 4);
+  ed->src_port = clib_byte_swap_u16(flow_key->src_port);
+  ed->dst_port = clib_byte_swap_u16(flow_key->dst_port);
+  if (status < 0) { ed->status = 0; } else { ed->status = 1; }
 }
 
 static void process_packet_ip6(ip6_header_t *packet) {
@@ -397,6 +417,7 @@ static void process_packet_ip6(ip6_header_t *packet) {
     record->octet_delta_count = record->octet_delta_count +\
       ((u64) packet->payload_length << 48);
   }
+  // TODO: Log this in event logger.
 }
 
 always_inline uword
@@ -744,6 +765,17 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   void * payload;
   int payload_length;
 
+  /* Log the event of sending a packet */
+  ELOG_TYPE_DECLARE (e) = {
+    .format = "[IPFIX] sending-packet: template: %s",
+    .format_args = "t1",
+    .n_enum_strings = 2,
+    .enum_strings = { "no", "yes" },
+  };
+  struct { u8 is_template; } * ed;
+  ed = ELOG_DATA (&vlib_global_main.elog_main, e);
+  ed->is_template = is_template;
+
   /* FIXME: why would the next node be ip4-lookup? */
   next_node = vlib_get_node_by_name(vm, (u8 *) "ip4-lookup");
   nf = vlib_get_frame_to_node(vm, next_node->index);
@@ -815,14 +847,27 @@ static void ipfix_expire_records(u64 current_time) {
   clib_bihash_kv_16_8_t keyvalue_ip4;
   clib_bihash_kv_48_8_t keyvalue_ip6;
   ipfix_main_t * im = &ipfix_main;
-
   vec_foreach_index(record_idx, im->flow_records_ip4) {
     record_ip4 = vec_elt_at_index(im->flow_records_ip4, record_idx);
     start = clib_byte_swap_u64(record_ip4->flow_start);
     end = clib_byte_swap_u64(record_ip4->flow_end);
 
     if ((end + im->idle_flow_timeout) < current_time) {
-      clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip4_flow, record_ip4);
+      /* Log in event-log */
+      ELOG_TYPE_DECLARE (e) = {
+	.format = "[IPFIX] Expired idle flow src: %d.%d.%d.%d:%d, dst: %d.%d.%d.%d:%d",
+	.format_args = "i1i1i1i1i2i1i1i1i1i2",
+      };
+      struct {
+	u8 src[4]; u16 src_port;
+	u8 dst[4]; u16 dst_port;
+      } * ed;
+      ed = ELOG_DATA (&vlib_global_main.elog_main, e);
+      memcpy(ed->src, record_ip4->flow_key.src.as_u8, sizeof(u8) * 4);
+      memcpy(ed->dst, record_ip4->flow_key.dst.as_u8, sizeof(u8) * 4);
+      ed->src_port = clib_byte_swap_u16(record_ip4->flow_key.src_port);
+      ed->dst_port = clib_byte_swap_u16(record_ip4->flow_key.dst_port);
+
       vec_add1(im->expired_records_ip4, *record_ip4);
       vec_del1(im->flow_records_ip4, record_idx);
 
@@ -833,7 +878,21 @@ static void ipfix_expire_records(u64 current_time) {
         clib_warning("Warning: Could not remove flow form hash.");
       };
     } else if ((start + im->active_flow_timeout) < current_time) {
-      clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record_ip4);
+      /* Log in event-log */
+      ELOG_TYPE_DECLARE (e) = {
+	.format = "[IPFIX] Expired active flow src: %d.%d.%d.%d:%d, dst: %d.%d.%d.%d:%d",
+	.format_args = "i1i1i1i1i2i1i1i1i1i2",
+      };
+      struct {
+	u8 src[4]; u16 src_port;
+	u8 dst[4]; u16 dst_port;
+      } * ed;
+      ed = ELOG_DATA (&vlib_global_main.elog_main, e);
+      memcpy(ed->src, record_ip4->flow_key.src.as_u8, sizeof(u8) * 4);
+      memcpy(ed->dst, record_ip4->flow_key.dst.as_u8, sizeof(u8) * 4);
+      ed->src_port = clib_byte_swap_u16(record_ip4->flow_key.src_port);
+      ed->dst_port = clib_byte_swap_u16(record_ip4->flow_key.dst_port);
+
       vec_add1(im->expired_records_ip4, *record_ip4);
 
       record_ip4->flow_start = clib_byte_swap_u64(current_time);
@@ -848,6 +907,7 @@ static void ipfix_expire_records(u64 current_time) {
     start = clib_byte_swap_u64(record_ip6->flow_start);
     end = clib_byte_swap_u64(record_ip6->flow_end);
 
+    // TODO: convert clib_warnings for ip6 addresses to events logged.
     if ((end + im->idle_flow_timeout) < current_time) {
       clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip6_flow, record_ip6);
       vec_add1(im->expired_records_ip6, *record_ip6);
