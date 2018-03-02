@@ -15,6 +15,8 @@
 # To only run this particular test:
 #   $ make test TEST=test_ipfix EXTERN_TESTS=<path-to-plugin>/ipfix \
 #               EXTERN_PLUGIN=/usr/lib/vpp_plugins
+#
+# To help debug the tests, you can supply a verbosity flag, e.g., "V=1"
 
 import unittest
 
