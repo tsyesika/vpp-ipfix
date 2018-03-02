@@ -36,7 +36,7 @@
 #define UDP_PROTOCOL 17
 
 /* Amount of time between each run of the process node (in seconds) */
-#define PROCESS_POLL_PERIOD 10.0
+#define PROCESS_POLL_PERIOD 0.5
 
 ipfix_main_t ipfix_main;
 
