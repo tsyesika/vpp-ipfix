@@ -22,8 +22,10 @@ import unittest
 
 from scapy.packet import Raw
 from scapy.layers.inet import IP, UDP, Ether
+from ipfix import IPFIX
 
 from framework import VppTestCase, VppTestRunner
+from util import ppp
 from random import randint
 
 class TestIPFIX(VppTestCase):
@@ -40,7 +42,9 @@ class TestIPFIX(VppTestCase):
 
     def setUp(self):
         super(TestIPFIX, self).setUp()
-        self.logger.info(self.vapi.ppcli("set ipfix timeout idle 1 timeout template 1 timeout active 1"))
+        # FIXME: I can't figure out how to get the test framework to call the
+        #        IPFIX plugin's API instead of using the CLI like this
+        self.logger.info(self.vapi.ppcli("set ipfix timeout idle 1 timeout template 1 timeout active 10"))
         self.logger.info(self.vapi.ppcli("set ipfix ip collector " + self.pg0.remote_ip4))
         self.logger.info(self.vapi.ppcli("set ipfix ip exporter " + self.pg1.remote_ip4))
         self.logger.info(self.vapi.ppcli("ipfix flow-meter " + self.pg1.name))
@@ -54,8 +58,28 @@ class TestIPFIX(VppTestCase):
         self.pg1.enable_capture()
         self.pg_start()
 
-        capture1 = self.pg1.get_capture(timeout = 1, expected_count = packet_count)
-        capture0 = self.pg0.get_capture(timeout = 5, expected_count = 2)
+        capture1 = self.pg1.get_capture(timeout = 5, expected_count = packet_count)
+        # with the timeout above, we expect to get a template pkt and one data pkt
+        capture0 = self.pg0.get_capture(timeout = 3, expected_count = 2)
+
+        self.verify_capture(self.pg0, self.pg1, capture0)
+
+    def verify_capture(self, collector_if, exporter_if, capture):
+        for packet in capture:
+            try:
+                ip = packet[IP]
+                udp = packet[UDP]
+                ipfix = packet[IPFIX]
+                self.assert_equal(ip.src, exporter_if.remote_ip4,
+                                  "exporter ip")
+                self.assert_equal(ip.dst, collector_if.remote_ip4,
+                                  "collector ip")
+                self.assert_equal(udp.dport, 4739)
+                self.assert_equal(ipfix.version, 10)
+            except:
+                self.logger.error(ppp("Unexpected or invalid packet:",
+                                      packet))
+                raise
 
     # copied from example test in docs
     def create_stream(self, src_if, dst_if, count):
