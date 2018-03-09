@@ -28,12 +28,12 @@ from framework import VppTestCase, VppTestRunner
 from util import ppp
 from random import randint
 
-class TestIPFIX(VppTestCase):
-    """ IPFIX test case """ # test names are required
+class TestIPFIXTemplate(VppTestCase):
+    """ IPFIX template test case """ # test names are required
 
     @classmethod
     def setUpClass(cls):
-        super(TestIPFIX, cls).setUpClass()
+        super(TestIPFIXTemplate, cls).setUpClass()
         cls.create_pg_interfaces(range(2))  # create pg0 and pg1
         for i in cls.pg_interfaces:
             i.admin_up()  # put the interface upsrc_if
@@ -41,38 +41,24 @@ class TestIPFIX(VppTestCase):
             i.resolve_arp()  # resolve ARP, so that we know VPP MAC
 
     def setUp(self):
-        super(TestIPFIX, self).setUp()
+        super(TestIPFIXTemplate, self).setUp()
         # FIXME: I can't figure out how to get the test framework to call the
         #        IPFIX plugin's API instead of using the CLI like this
-        self.logger.info(self.vapi.ppcli("set ipfix timeout template 1"))
         self.logger.info(self.vapi.ppcli("set ipfix ip collector " + self.pg0.remote_ip4))
         self.logger.info(self.vapi.ppcli("set ipfix ip exporter " + self.pg1.remote_ip4))
         self.logger.info(self.vapi.ppcli("ipfix flow-meter " + self.pg1.name))
 
     def test_template(self):
+        self.logger.info(self.vapi.ppcli("set ipfix timeout template 1"))
+
         self.pg0.enable_capture()
         self.pg1.enable_capture()
         self.pg_start()
         # no packets on pg1 since we didn't inject any packets
-        self.pg0.assert_nothing_captured()
-        # expect 1 template pkt
-        capture = self.pg0.get_capture(timeout = 1, expected_count = 1)
+        self.pg1.assert_nothing_captured()
+        # expect 3 template pkt, 1/sec
+        capture = self.pg0.get_capture(timeout = 3, expected_count = 3)
         self.verify_template(self.pg0, self.pg1, capture)
-
-    # FIXME: this test doesn't work yet
-    #def test_basic(self):
-    #    packet_count = 10
-    #    packets = self.create_stream(self.pg0, self.pg1, packet_count)
-
-    #    self.pg0.add_stream(packets)
-    #    self.pg0.enable_capture()
-    #    self.pg1.enable_capture()
-    #    self.pg_start()
-
-    #    capture1 = self.pg1.get_capture(timeout = 1, expected_count = packet_count)
-    #    # with the timeout above, we expect to get a template pkt and one data pkt
-    #    capture0 = self.pg2.get_capture(timeout = 3, expected_count = 2, filter_out_fn=None)
-    #    self.verify_capture(self.pg0, self.pg1, capture0)
 
     def verify_template(self, collector_if, exporter_if, capture):
         for packet in capture:
@@ -92,6 +78,41 @@ class TestIPFIX(VppTestCase):
                 self.logger.error(ppp("Unexpected or invalid packet:",
                                       packet))
                 raise
+
+class TestIPFIXData(VppTestCase):
+    """ IPFIX data test case """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestIPFIXData, cls).setUpClass()
+        cls.create_pg_interfaces(range(2))
+        for i in cls.pg_interfaces:
+            i.admin_up()
+            i.config_ip4()
+            i.resolve_arp()
+
+    def setUp(self):
+        super(TestIPFIXData, self).setUp()
+        self.logger.info(self.vapi.ppcli("set ipfix ip collector " + self.pg0.remote_ip4))
+        self.logger.info(self.vapi.ppcli("set ipfix ip exporter " + self.pg1.remote_ip4))
+        self.logger.info(self.vapi.ppcli("ipfix flow-meter " + self.pg1.name))
+
+    def test_basic(self):
+        self.logger.info(self.vapi.ppcli("set ipfix timeout template 20"))
+        self.logger.info(self.vapi.ppcli("set ipfix timeout idle 3"))
+
+        packet_count = 10
+        packets = self.create_stream(self.pg0, self.pg1, packet_count)
+
+        self.pg0.add_stream(packets)
+        self.pg0.enable_capture()
+        self.pg1.enable_capture()
+        self.pg_start()
+
+        capture1 = self.pg1.get_capture(timeout = 2, expected_count = packet_count)
+        # with the timeout above, we expect to get just a data packet
+        capture0 = self.pg0.get_capture(timeout = 5, expected_count = 1)
+        self.verify_capture(self.pg0, self.pg1, capture0)
 
     def verify_capture(self, collector_if, exporter_if, capture):
         for packet in capture:
@@ -121,7 +142,7 @@ class TestIPFIX(VppTestCase):
             # create the packet itself
             p = (Ether(dst=src_if.local_mac, src=src_if.remote_mac) /
                  IP(src=src_if.remote_ip4, dst=dst_if.remote_ip4) /
-                 UDP(sport=randint(1000, 2000), dport=5678) /
+                 UDP(sport=7777, dport=5678) /
                  Raw(payload))
             # store a copy of the packet in the packet info
             info.data = p.copy()
