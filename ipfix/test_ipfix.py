@@ -74,9 +74,11 @@ class TestIPFIXTemplate(VppTestCase):
                 self.assert_equal(ipfix.version, 10)
                 # check that there's an IPFIX template
                 self.assert_equal(ipfix[Template].templateID, 256)
-            except:
-                self.logger.error(ppp("Unexpected or invalid packet:",
-                                      packet))
+            except IndexError:
+                self.logger.error(ppp("Invalid packet:", packet))
+                raise
+            except AssertionError:
+                self.logger.error(ppp("Unexpected packet:", packet))
                 raise
 
 class TestIPFIXData(VppTestCase):
@@ -126,9 +128,11 @@ class TestIPFIXData(VppTestCase):
                                   "collector ip")
                 self.assert_equal(udp.dport, 4739)
                 self.assert_equal(ipfix.version, 10)
-            except:
-                self.logger.error(ppp("Unexpected or invalid packet:",
-                                      packet))
+            except IndexError:
+                self.logger.error(ppp("Invalid packet:", packet))
+                raise
+            except AssertionError:
+                self.logger.error(ppp("Unexpected packet:", packet))
                 raise
 
     # copied from example test in docs
