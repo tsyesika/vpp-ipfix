@@ -1,22 +1,23 @@
 #!/usr/bin/env python
+"""
+Unit tests for IPFIX plugin
 
-# Unit tests for IPFIX plugin
-#
-# How to run
-# ----------
-# Since the plugin is out of the VPP tree, running the tests has extra steps.
-#
-# To run tests in general in the VPP working dir:
-#   $ make test
-#
-# Now to run for this plugin:
-#   $ make test EXTERN_TESTS=<path-to-plugin>/ipfix
-#
-# To only run this particular test:
-#   $ make test TEST=test_ipfix EXTERN_TESTS=<path-to-plugin>/ipfix \
-#               EXTERN_PLUGIN=/usr/lib/vpp_plugins
-#
-# To help debug the tests, you can supply a verbosity flag, e.g., "V=1"
+How to run
+----------
+Since the plugin is out of the VPP tree, running the tests has extra steps.
+
+To run tests in general in the VPP working dir:
+  $ make test
+
+Now to run for this plugin:
+  $ make test EXTERN_TESTS=<path-to-plugin>/ipfix
+
+To only run this particular test:
+  $ make test TEST=test_ipfix EXTERN_TESTS=<path-to-plugin>/ipfix \
+              EXTERN_PLUGIN=/usr/lib/vpp_plugins
+
+To help debug the tests, you can supply a verbosity flag, e.g., "V=1"
+"""
 
 import unittest
 
