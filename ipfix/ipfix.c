@@ -88,9 +88,9 @@ int ipfix_flow_meter_enable_disable (ipfix_main_t * sm, u32 sw_if_index,
   if (sw->type != VNET_SW_INTERFACE_TYPE_HARDWARE)
     return VNET_API_ERROR_INVALID_SW_IF_INDEX;
   
-  vnet_feature_enable_disable ("ip4-unicast", "ipfix-meter-ip4",
+  vnet_feature_enable_disable ("ip4-output", "ipfix-meter-ip4",
                                sw_if_index, enable_disable, 0, 0);
-  vnet_feature_enable_disable ("ip6-unicast", "ipfix-meter-ip6",
+  vnet_feature_enable_disable ("ip6-output", "ipfix-meter-ip6",
                                sw_if_index, enable_disable, 0, 0);
 
   return rv;
@@ -443,14 +443,14 @@ VLIB_INIT_FUNCTION (ipfix_init);
  */
 VNET_FEATURE_INIT (ipfix_meter_ip4, static) =
 {
-  .arc_name = "ip4-unicast",
+  .arc_name = "ip4-output",
   .node_name = "ipfix-meter-ip4",
-  .runs_before = VNET_FEATURES ("ip4-lookup"),
+  .runs_before = VNET_FEATURES ("interface-output"),
 };
 
 VNET_FEATURE_INIT (ipfix_meter_ip6, static) =
 {
-  .arc_name = "ip6-unicast",
+  .arc_name = "ip6-output",
   .node_name = "ipfix-meter-ip6",
-  .runs_before = VNET_FEATURES ("ip6-lookup"),
+  .runs_before = VNET_FEATURES ("interface-output"),
 };
