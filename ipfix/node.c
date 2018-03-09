@@ -795,7 +795,7 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
   ip0->fragment_id = 0;
   ip0->flags_and_fragment_offset = 0;
   ip0->ttl = 64;
-  ip0->protocol = 17;
+  ip0->protocol = IP_PROTOCOL_UDP;
 
   clib_memcpy(&ip0->src_address.data, &im->exporter_ip.data, sizeof(ip4_address_t));
   clib_memcpy(&ip0->dst_address.data, &im->collector_ip.data, sizeof(ip4_address_t));
