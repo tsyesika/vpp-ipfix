@@ -579,9 +579,7 @@ static void ipfix_build_v10_packet(void *record,
   } else {
     packet->template = im->template_ip4;
   }
-
-  clib_warning("%U", format_netflow_v10_template, packet->template);
-
+  
   struct timespec current_time_clock;
   clock_gettime(CLOCK_REALTIME, &current_time_clock);
 
@@ -822,7 +820,6 @@ static void ipfix_expire_records(u64 current_time) {
     end = clib_byte_swap_u64(record_ip4->flow_end);
 
     if ((end + im->idle_flow_timeout) < current_time) {
-      clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip4_flow, record_ip4);
       vec_add1(im->expired_records_ip4, *record_ip4);
       vec_del1(im->flow_records_ip4, record_idx);
 
@@ -833,7 +830,6 @@ static void ipfix_expire_records(u64 current_time) {
         clib_warning("Warning: Could not remove flow form hash.");
       };
     } else if ((start + im->active_flow_timeout) < current_time) {
-      clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip4_flow, record_ip4);
       vec_add1(im->expired_records_ip4, *record_ip4);
 
       record_ip4->flow_start = clib_byte_swap_u64(current_time);
@@ -849,7 +845,6 @@ static void ipfix_expire_records(u64 current_time) {
     end = clib_byte_swap_u64(record_ip6->flow_end);
 
     if ((end + im->idle_flow_timeout) < current_time) {
-      clib_warning("IPFix has expired a idle flow %U", format_ipfix_ip6_flow, record_ip6);
       vec_add1(im->expired_records_ip6, *record_ip6);
       vec_del1(im->flow_records_ip6, record_idx);
 
@@ -860,7 +855,6 @@ static void ipfix_expire_records(u64 current_time) {
         clib_warning("Warning: Could not remove flow form hash.");
       };
     } else if ((start + im->active_flow_timeout) < current_time) {
-      clib_warning("IPFIX has expired an active flow. %U\n", format_ipfix_ip6_flow, record_ip6);
       vec_add1(im->expired_records_ip6, *record_ip6);
 
       record_ip6->flow_start = clib_byte_swap_u64(current_time);
@@ -915,7 +909,6 @@ static uword ipfix_process_records_fn(vlib_main_t * vm,
     u64 packet_idx;
     vec_foreach_index(packet_idx, im->data_packets) {
       packet = vec_elt_at_index(im->data_packets, packet_idx);
-      clib_warning("%U", format_netflow_v10_data_packet, packet);
 
       /* FIXME: Instead of looping over packets and sending each one, the
                 loop should be in the function to fill up a frame with
