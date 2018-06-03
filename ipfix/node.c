@@ -36,7 +36,7 @@
 #define UDP_PROTOCOL 17
 
 /* Amount of time between each run of the process node (in seconds) */
-#define PROCESS_POLL_PERIOD 10.0
+#define PROCESS_POLL_PERIOD 0.5
 
 ipfix_main_t ipfix_main;
 
@@ -258,7 +258,8 @@ static char * ipfix_error_strings[] = {
 };
 
 typedef enum {
-  IPFIX_NEXT_INTERFACE_OUTPUT,
+  IPFIX_NEXT_DROP,
+  IPFIX_NEXT_LOOKUP,
   IPFIX_N_NEXT,
 } ipfix_next_t;
 
@@ -422,9 +423,10 @@ ipfix_meter_fn_inline (vlib_main_t * vm,
 
       while (n_left_from >= 4 && n_left_to_next >= 2)
         {
-          u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
-          u32 next1 = IPFIX_NEXT_INTERFACE_OUTPUT;
+          u32 next0 = IPFIX_NEXT_DROP;
+          u32 next1 = IPFIX_NEXT_DROP;
           u32 sw_if_index0, sw_if_index1;
+          ethernet_header_t *eh0, *eh1;
           ip4_header_t *ip4_0, *ip4_1;
           ip6_header_t *ip6_0, *ip6_1;
           u32 bi0, bi1;
@@ -458,14 +460,23 @@ ipfix_meter_fn_inline (vlib_main_t * vm,
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
           sw_if_index1 = vnet_buffer(b1)->sw_if_index[VLIB_RX];
 
+          /* set up packet for next IP feature */
+          vnet_feature_next(vnet_buffer(b0)->sw_if_index[VLIB_TX],
+                            &next0, b0);
+          vnet_feature_next(vnet_buffer(b1)->sw_if_index[VLIB_TX],
+                            &next1, b1);
+
+          eh0 = vlib_buffer_get_current (b0);
+          eh1 = vlib_buffer_get_current (b1);
+
           if (is_ipv6) {
-            ip6_0 = vlib_buffer_get_current (b0);
-            ip6_1 = vlib_buffer_get_current (b1);
+            ip6_0 = (ip6_header_t*) (eh0 + 1);
+            ip6_1 = (ip6_header_t*) (eh1 + 1);
             process_packet_ip6(ip6_0);
             process_packet_ip6(ip6_1);
           } else {
-            ip4_0 = vlib_buffer_get_current (b0);
-            ip4_1 = vlib_buffer_get_current (b1);
+            ip4_0 = (ip4_header_t*) (eh0 + 1);
+            ip4_1 = (ip4_header_t*) (eh1 + 1);
             process_packet_ip4(ip4_0);
             process_packet_ip4(ip4_1);
           }
@@ -508,8 +519,9 @@ ipfix_meter_fn_inline (vlib_main_t * vm,
         {
           u32 bi0;
           vlib_buffer_t * b0;
-          u32 next0 = IPFIX_NEXT_INTERFACE_OUTPUT;
+          u32 next0 = IPFIX_NEXT_DROP;
           u32 sw_if_index0;
+          ethernet_header_t *eh0;
           ip4_header_t *ip4_0;
           ip6_header_t *ip6_0;
 
@@ -524,11 +536,16 @@ ipfix_meter_fn_inline (vlib_main_t * vm,
           b0 = vlib_get_buffer (vm, bi0);
           sw_if_index0 = vnet_buffer(b0)->sw_if_index[VLIB_RX];
 
+          vnet_feature_next(vnet_buffer(b0)->sw_if_index[VLIB_TX],
+                            &next0, b0);
+
+          eh0 = vlib_buffer_get_current (b0);
+
           if (is_ipv6) {
-            ip6_0 = vlib_buffer_get_current (b0);
+            ip6_0 = (ip6_header_t*) (eh0 + 1);
             process_packet_ip6(ip6_0);
           } else {
-            ip4_0 = vlib_buffer_get_current (b0);
+            ip4_0 = (ip4_header_t*) (eh0 + 1);
             process_packet_ip4(ip4_0);
           }
 
@@ -767,13 +784,16 @@ static void ipfix_send_packet(vlib_main_t * vm, u8 is_template, netflow_v10_data
    * https://www.mail-archive.com/vpp-dev@lists.fd.io/msg02656.html */
   b0->flags |= VNET_BUFFER_F_LOCALLY_ORIGINATED;
 
+  vnet_buffer (b0)->sw_if_index[VLIB_RX] = 0;
+  vnet_buffer (b0)->sw_if_index[VLIB_TX] = ~0;
+
   ip0 = (ip4_header_t*) b0->data;
   ip0->ip_version_and_header_length = 0x45;
   ip0->tos = 0;
   ip0->fragment_id = 0;
   ip0->flags_and_fragment_offset = 0;
   ip0->ttl = 64;
-  ip0->protocol = 17;
+  ip0->protocol = IP_PROTOCOL_UDP;
 
   clib_memcpy(&ip0->src_address.data, &im->exporter_ip.data, sizeof(ip4_address_t));
   clib_memcpy(&ip0->dst_address.data, &im->collector_ip.data, sizeof(ip4_address_t));
@@ -958,7 +978,8 @@ VLIB_REGISTER_NODE (ipfix_meter_ip4_node) = {
 
   /* edit / add dispositions here */
   .next_nodes = {
-        [IPFIX_NEXT_INTERFACE_OUTPUT] = "ip4-lookup",
+    [IPFIX_NEXT_DROP] = "error-drop",
+    [IPFIX_NEXT_LOOKUP] = "ip4-lookup"
   },
 };
 
@@ -976,6 +997,7 @@ VLIB_REGISTER_NODE (ipfix_meter_ip6_node) = {
 
   /* edit / add dispositions here */
   .next_nodes = {
-    [IPFIX_NEXT_INTERFACE_OUTPUT] = "ip6-lookup",
+    [IPFIX_NEXT_DROP] = "error-drop",
+    [IPFIX_NEXT_LOOKUP] = "ip6-lookup"
   },
 };
